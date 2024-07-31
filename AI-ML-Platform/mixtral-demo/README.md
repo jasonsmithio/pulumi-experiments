@@ -86,15 +86,15 @@ In our Python demo, we will be standing up a GKE Cluster. Pulumi allows us to [c
 
 ```bash
 pulumi config set gcp:project $PROJECT_ID
-pulumi config set gcp:projectNumber $PROJECT_NUMBER
-pulumi config set gcp:gceSA $GCE_SA  
-pulumi config set gcp:region $REGION
-pulumi config set gcp:zone $ZONE
-pulumi config set gcp:gkeNetwork $NETWORK
-pulumi config set gcp:clusterName mixtral-gke-cluster
-pulumi config set gcp:master_version 1.27
-pulumi config set gcp:node_count 5
-pulumi config set gcp:node_machine_type n2d-standard-4
+pulumi config set projectNumber $PROJECT_NUMBER
+pulumi config set gceSA $GCE_SA  
+pulumi config set region $REGION
+pulumi config set zone $ZONE
+pulumi config set gkeNetwork $NETWORK
+pulumi config set clusterName mixtral-gke-cluster
+pulumi config set master_version 1.27
+pulumi config set node_count 5
+pulumi config set node_machine_type n2d-standard-4
 ```
 
 Notice how we are using some of the variables we set earlier.

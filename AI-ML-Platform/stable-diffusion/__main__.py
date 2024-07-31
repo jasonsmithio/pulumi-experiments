@@ -9,7 +9,7 @@ gcp_project = config.get("project")
 gcp_region = config.get("region", "us-central1")
 gcp_zone = config.get("zone", "us-central1-a")
 gke_network = config.get("gkeNetwork", "default")
-gke_cluster_name = config.get("clusterName", "mixtral-cluster")
+gke_cluster_name = config.get("clusterName", "sd-cluster")
 gke_master_version =config.get("master_version", 1.27)
 gke_master_node_count = config.get_int("nodesPerZone", 1)
 
