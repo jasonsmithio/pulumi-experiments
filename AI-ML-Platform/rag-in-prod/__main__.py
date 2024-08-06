@@ -13,7 +13,7 @@ gcp_zone = gcp_config.get("zone", "us-central1-a")
 
 rag_config = pulumi.Config("rag")
 gke_cluster_name = rag_config.get("clusterName", "rag-cluster")
-gke_master_version = rag_config.get("master_version", 1.27)
+gke_master_version = rag_config.get("master_version", 1.29)
 gke_network = rag_config.get("gkeNetwork", "gke-main")
 gke_master_node_count = rag_config.get_int("nodesPerZone", 1)
 gcs_storage = rag_config.get("gcs_bucket")
