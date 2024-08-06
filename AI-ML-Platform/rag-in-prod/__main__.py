@@ -76,7 +76,7 @@ users:
 """.format(info[2]['cluster_ca_certificate'], info[1], '{0}_{1}_{2}'.format(gcp_project, gcp_zone, info[0])))
 
 # Make a Kubernetes provider instance that uses our cluster from above.
-kubeconfig = kubernetes.Provider('gke_k8s', kubeconfig=k8s_config)
+kubeconfig = kubernetes.Provider('gke_k8s', kubeconfig=k8s_config, opts=pulumi.ResourceOptions(depends_on=[gke_cluster]))
 
 # Create a GCP service account for the nodepool
 #gke_nodepool_sa = gcp.serviceaccount.Account(

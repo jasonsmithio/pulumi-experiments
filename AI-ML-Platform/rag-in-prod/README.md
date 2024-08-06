@@ -1,4 +1,4 @@
-# RAG with Ray, LangChain, and HuggingFace on GKE using Pulumi Demo
+# [WIP] RAG with Ray, LangChain, and HuggingFace on GKE using Pulumi Demo
 
 [From This GCP Blog Post](https://cloud.google.com/blog/products/ai-machine-learning/rag-quickstart-with-ray-langchain-and-huggingface)
 
