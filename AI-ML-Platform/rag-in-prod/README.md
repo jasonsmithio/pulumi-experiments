@@ -1,12 +1,20 @@
-# RAG with Ray, LangChain and HuggingFace on GKE using Pulumi Demo
+# RAG with Ray, LangChain, and HuggingFace on GKE using Pulumi Demo
 
 [From This GCP Blog Post](https://cloud.google.com/blog/products/ai-machine-learning/rag-quickstart-with-ray-langchain-and-huggingface)
 
-This is a very basic tutorial on how to get started with GCP on Cloud. This is based on another tutorial I made with regards to [AI on GKE](https://github.com/jasonsmithio/ai-on-gke/tree/main/mixtral-on-gke).
+This is a very basic tutorial on how to get started with GCP on Cloud. This is based on another tutorial I made with regards to [AI on GKE](https://github.com/jasonsmithio/pulumi-experiments/tree/main/AI-ML-Platform/mixtral-demo).
 
 This example will demostrate how to serve [Mixtral 8X7B](https://mistral.ai/news/mixtral-of-experts/ "Mixtral 8X7B") model on [NVIDIA L4 GPUs](https://cloud.google.com/compute/docs/gpus#l4-gpus "NVIDIA L4 GPUs") running on Google Cloud Kubernetes Engine (GKE). It will help you understand the AI/ML ready features of GKE and how to use them to serve large language models.
 
-## What is Mistral?
+## What is KubeRay?
+
+
+
+## What is Langchain?
+
+
+
+## What is HuggingFace?
 
 Mixtral 8X7B is the latest LLM provided by [Mistral.ai](https://mistral.ai "Mistral.ai"). You can learn more about it [here](https://mistral.ai/news/mixtral-of-experts/). To interface with the model, we will be using [Hugging Face](https://huggingface.co/mistralai/Mixtral-8x7B-v0.1) and it's [text generation inference](https://huggingface.co/docs/text-generation-inference/en/index).
 
@@ -23,8 +31,8 @@ Before we get started, we will set a few basic environment variables in our term
 export PROJECT_ID=<your-project-id>
 export REGION=<your region>
 export ZONE=${REGION}-a 
-export CLUSTER_NAME=mixtral-cluster
-export NETWORK=<your network>
+export CLUSTER_NAME=kuberay-cluster
+export NETWORK='default' #Change this to a different network if you choose to do so
 ```
 
 ### Configuring the Google Cloud Platform (GCP) environment
@@ -70,8 +78,8 @@ This CAN be configured in Pulumi but for the purposes of this demo, we will set 
 In whatever directory you want to execute this code, run the below command in the terminal. It will pull down this GitHub repo and place you in the folder
 
 ```bash
-git clone https://github.com/jasonsmithio/ai-gke-pulumi-demo
-cd ai-gke-pulumi-demo
+git clone https://github.com/jasonsmithio/pulumi-experiments
+cd pulumi-experiments/AI-ML-Platform/rag-in-prod/
 ```
 
 ### Staging Pulumi Environment
@@ -93,7 +101,7 @@ pulumi config set gcp:region $REGION
 pulumi config set gcp:zone $ZONE
 pulumi config set rag:gcs_bucket ray-gke-storage-$PROJECT_ID
 pulumi config set rag:clusterName $CLUSTER_NAME
-pulumi config set rag:master_version 1.27
+pulumi config set rag:master_version 1.29
 pulumi config set rag:node_count 5
 pulumi config set rag:gkeNetwork $NETWORK
 pulumi config set rag:node_machine_type n2d-standard-4

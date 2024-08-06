@@ -1,2 +1,12 @@
 config:
-  rag:project: cloudmium-1
+  gcp:project: cloudmium-1
+  gcp:region: us-central1
+  gcp:zone: us-central1-c
+  rag:clusterName: kuberay-cluster
+  rag:gcs_bucket: ray-gke-storage-cloudmium-1
+  rag:gkeNetwork: gke-main
+  rag:k8s_namespace: rag_namespace
+  rag:master_version: "1.29"
+  rag:node_count: "5"
+  rag:node_machine_type: n2d-standard-4
+  rag:projectNumber: "363808605605"
