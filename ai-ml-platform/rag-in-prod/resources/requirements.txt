@@ -1,9 +1,9 @@
 pulumi>=3.0.0,<4.0.0
 pulumi-gcp==7.24.0
-pulumi-kubernetes==4.12.0
+pulumi-kubernetes==4.17.0
 pulumi-gitlab==7.0.0
 pulumi-github==6.2.0
 pulumi-null==0.0.3
 pulumi-std==1.6.2
-pulumi-random==4.16.2
+pulumi-random==4.16.3
 pulumi-command==0.10.0

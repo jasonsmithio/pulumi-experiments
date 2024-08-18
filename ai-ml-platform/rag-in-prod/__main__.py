@@ -2,6 +2,7 @@ import pulumi
 import pulumi_gcp as gcp
 import pulumi_kubernetes as kubernetes
 from pulumi_gcp.container import Cluster, ClusterNodeConfigArgs, NodePool
+from pulumi_kubernetes.kustomize import Directory
 from pulumi_kubernetes.helm.v3 import Chart, ChartOpts, FetchOpts
 from resources import storage, cloudsql, svcacct
 
@@ -170,12 +171,15 @@ kubeconfig = kubernetes.Provider('gke_k8s', kubeconfig=k8s_config)
 
 # Kuberay Kustomize
 
-kubernetes.kustomize.v2.Directory("kuberay-app",
-                        directory="kuberay/default")
+Directory(
+    "kuberay",
+    directory="./kuberay/default",
+    opts=pulumi.ResourceOptions(provider=kubeconfig))
 
-#kubernetes.kustomize.v2.Directory("kuberay",
-#                        directory="kuberay/default",
-#                        opts=pulumi.ResourceOptions(depends_on=[gke_nodepool]))
+#kuberay = Directory(
+#    "kuberay",
+#    directory="./kuberay/default",
+#    opts=pulumi.ResourceOptions(provider=kubeconfig))
 
 
 # Export the Service's IP address
