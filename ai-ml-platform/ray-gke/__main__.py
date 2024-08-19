@@ -14,7 +14,7 @@ gcp_zone = gcp_config.get("zone", "us-central1-a")
 
 
 rag_config = pulumi.Config("rag")
-gke_cluster_name = rag_config.get("clusterName", "rag-cluster")
+gke_cluster_name = rag_config.get("clusterName", "kuberay-cluster")
 gke_master_version = rag_config.get("master_version", 1.29)
 gke_network = rag_config.get("gkeNetwork", "default")
 gke_master_node_count = rag_config.get_int("nodesPerZone", 1)
@@ -35,26 +35,7 @@ netid = gcp.compute.get_network(name=gke_network)
 
 pgsql = cloudsql.CloudSQL("pg-rag-instance","pg-db", gcp_region,"db-f1-micro", netid.id)
 
-dbinst = pgsql.pgbuild()
-
-# Create a cluster in the new network and subnet
-#gke_cluster = Cluster(gke_cluster_name,
-#    location=gcp_region,
-#    network=gke_network,
-#    enable_autopilot=True,
-#    deletion_protection=False,
-#    node_config=ClusterNodeConfigArgs(
-#        machine_type=gke_ml_machine_type,
-#        oauth_scopes=[
-#            'https://www.googleapis.com/auth/cloud-platform',
-#           'https://www.googleapis.com/auth/compute',
-#            'https://www.googleapis.com/auth/devstorage.read_only',
-#            'https://www.googleapis.com/auth/logging.write',
-#            'https://www.googleapis.com/auth/monitoring'
-#        ],
-#      ),
-#    )
-
+#dbinst = pgsql.pgbuild()
 
 # Create a cluster in the new network and subnet
 gke_cluster = gcp.container.Cluster("cluster-1", 
@@ -175,12 +156,6 @@ Directory(
     "kuberay",
     directory="./kuberay/default",
     opts=pulumi.ResourceOptions(provider=kubeconfig))
-
-#kuberay = Directory(
-#    "kuberay",
-#    directory="./kuberay/default",
-#    opts=pulumi.ResourceOptions(provider=kubeconfig))
-
 
 # Export the Service's IP address
 #service_ip = service.status.apply(
