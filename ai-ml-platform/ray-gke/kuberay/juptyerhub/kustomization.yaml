@@ -1,0 +1,29 @@
+---
+# This file was auto-generated with helmYAMLizer.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- hub/configmap.yaml
+- hub/deployment.yaml
+- hub/netpol.yaml
+- hub/pvc.yaml
+- hub/rbac.yaml
+- hub/secret.yaml
+- hub/service.yaml
+- hub/serviceaccount.yaml
+- image-puller/daemonset-continuous.yaml
+- image-puller/daemonset-hook.yaml
+- image-puller/job.yaml
+- image-puller/rbac.yaml
+- image-puller/serviceaccount.yaml
+- proxy/deployment.yaml
+- proxy/netpol.yaml
+- proxy/service.yaml
+- scheduling/user-placeholder/pdb.yaml
+- scheduling/user-placeholder/statefulset.yaml
+- scheduling/user-scheduler/configmap.yaml
+- scheduling/user-scheduler/deployment.yaml
+- scheduling/user-scheduler/pdb.yaml
+- scheduling/user-scheduler/rbac.yaml
+- scheduling/user-scheduler/serviceaccount.yaml
+- singleuser/netpol.yaml

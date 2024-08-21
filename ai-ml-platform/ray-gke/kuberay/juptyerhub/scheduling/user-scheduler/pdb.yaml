@@ -1,0 +1,19 @@
+---
+# Source: jupyterhub/templates/scheduling/user-scheduler/pdb.yaml
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: user-scheduler
+  labels:
+    component: user-scheduler
+    app: jupyterhub
+    release: release-name
+    chart: jupyterhub-3.3.8
+    heritage: Helm
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      component: user-scheduler
+      app: jupyterhub
+      release: release-name

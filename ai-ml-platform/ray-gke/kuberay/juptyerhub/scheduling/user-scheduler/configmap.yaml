@@ -1,0 +1,49 @@
+---
+# Source: jupyterhub/templates/scheduling/user-scheduler/configmap.yaml
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: user-scheduler
+  labels:
+    component: user-scheduler
+    app: jupyterhub
+    release: release-name
+    chart: jupyterhub-3.3.8
+    heritage: Helm
+data:
+  config.yaml: |
+    apiVersion: kubescheduler.config.k8s.io/v1
+    kind: KubeSchedulerConfiguration
+    leaderElection:
+      resourceLock: endpointsleases
+      resourceName: user-scheduler-lock
+      resourceNamespace: "default"
+    profiles:
+      - schedulerName: release-name-user-scheduler
+        plugins:
+          score:
+            disabled:
+            - name: NodeResourcesBalancedAllocation
+            - name: NodeAffinity
+            - name: InterPodAffinity
+            - name: NodeResourcesFit
+            - name: ImageLocality
+            enabled:
+            - name: NodeAffinity
+              weight: 14631
+            - name: InterPodAffinity
+              weight: 1331
+            - name: NodeResourcesFit
+              weight: 121
+            - name: ImageLocality
+              weight: 11
+        pluginConfig:
+          - args:
+              scoringStrategy:
+                resources:
+                - name: cpu
+                  weight: 1
+                - name: memory
+                  weight: 1
+                type: MostAllocated
+            name: NodeResourcesFit

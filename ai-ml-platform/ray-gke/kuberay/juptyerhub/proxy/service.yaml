@@ -1,0 +1,25 @@
+---
+# Source: jupyterhub/templates/proxy/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: proxy-public
+  labels:
+    component: proxy-public
+    app: jupyterhub
+    release: release-name
+    chart: jupyterhub-3.3.8
+    heritage: Helm
+spec:
+  selector:
+    # This service will target the autohttps pod if autohttps is configured, and
+    # the proxy pod if not. When autohttps is configured, the service proxy-http
+    # will be around to target the proxy pod directly.
+    component: proxy
+    app: jupyterhub
+    release: release-name
+  ports:
+  - name: http
+    port: 80
+    targetPort: http
+  type: LoadBalancer

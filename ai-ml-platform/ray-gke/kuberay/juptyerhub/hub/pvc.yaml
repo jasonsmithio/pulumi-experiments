@@ -1,0 +1,18 @@
+---
+# Source: jupyterhub/templates/hub/pvc.yaml
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: hub-db-dir
+  labels:
+    component: hub
+    app: jupyterhub
+    release: release-name
+    chart: jupyterhub-3.3.8
+    heritage: Helm
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: "1Gi"

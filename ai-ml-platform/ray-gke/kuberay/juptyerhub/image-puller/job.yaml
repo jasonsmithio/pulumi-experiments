@@ -1,0 +1,59 @@
+---
+# Source: jupyterhub/templates/image-puller/job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: hook-image-awaiter
+  labels:
+    component: image-puller
+    app: jupyterhub
+    release: release-name
+    chart: jupyterhub-3.3.8
+    heritage: Helm
+    hub.jupyter.org/deletable: "true"
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    "helm.sh/hook-weight": "10"
+spec:
+  template:
+    # The hook-image-awaiter Job and hook-image-puller DaemonSet was
+    # conditionally created based on this state:
+    #
+    # prePuller.hook.enabled=true
+    # prePuller.hook.pullOnlyOnChanges=true
+    # post-upgrade checksum != pre-upgrade checksum (of the hook-image-puller DaemonSet)
+    # "ba487bd12ae5197073a0101077a7c2d0935152d1b5eb3688b31981f35c985cdc" != ""
+    #
+    metadata:
+      labels:
+        component: image-puller
+        app: jupyterhub
+        release: release-name
+    spec:
+      restartPolicy: Never
+      serviceAccountName: hook-image-awaiter
+      tolerations:
+      - effect: NoSchedule
+        key: hub.jupyter.org/dedicated
+        operator: Equal
+        value: core
+      - effect: NoSchedule
+        key: hub.jupyter.org_dedicated
+        operator: Equal
+        value: core
+      containers:
+      - image: quay.io/jupyterhub/k8s-image-awaiter:3.3.8
+        name: hook-image-awaiter
+        command:
+        - /image-awaiter
+        - -ca-path=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        - -auth-token-path=/var/run/secrets/kubernetes.io/serviceaccount/token
+        - -api-server-address=https://kubernetes.default.svc:$(KUBERNETES_SERVICE_PORT)
+        - -namespace=default
+        - -daemonset=hook-image-puller
+        - -pod-scheduling-wait-duration=10
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsGroup: 65534
+          runAsUser: 65534
