@@ -24,7 +24,7 @@ k8s_namespace = rag_config.get('k8s_namespace')
 #setting unique values for the nodepool
 gke_nodepool_name = rag_config.get("nodepoolName", "gpu-nodepool")
 gke_nodepool_node_count = rag_config.get_int("nodesPerZone", 2)
-gke_ml_machine_type = rag_config.get("mlMachines", "g2-standard-24")
+gke_ml_machine_type = rag_config.get("mlMachines", "g2-standard-32")
 
 #Create GCS Bucket
 mybucket = storage.gcStorage(gcs_storage, gcp_region).makebucket()

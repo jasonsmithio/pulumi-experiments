@@ -29,7 +29,8 @@ class Mixtral:
                             env=[
                                 kubernetes.core.v1.EnvVarArgs(
                                     name="MODEL_ID",
-                                    value="mistralai/Mixtral-8x7B-v0.1",
+                                    value="mistralai/Mixtral-8x22B-v0.1"
+                                    #value="mistralai/Mixtral-8x7B-v0.1",
                                 ),
                                 kubernetes.core.v1.EnvVarArgs(
                                     name="NUM_SHARD",
@@ -52,7 +53,7 @@ class Mixtral:
                                     value="bitsandbytes-nf4",
                                 ),
                             ],
-                            image="ghcr.io/huggingface/text-generation-inference:1.4.2",
+                            image="ghcr.io/huggingface/text-generation-inference:2.2.0",
                             name="mixtral-8x7b",
                             ports=[kubernetes.core.v1.ContainerPortArgs(
                                 container_port=80,
