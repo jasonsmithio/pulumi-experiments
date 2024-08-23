@@ -51,6 +51,15 @@ class Mixtral:
                                     name="QUANTIZE",
                                     value="bitsandbytes-nf4",
                                 ),
+                                kubernetes.core.v1.EnvVarArgs(
+                                    name="HUGGING_FACE_HUB_TOKEN",
+                                    value_from=kubernetes.core.v1.EnvVarSourceArgs(
+                                        secret_key_ref=kubernetes.core.v1.SecretKeySelectorArgs(
+                                            key="hf_api_token",
+                                            name="hf-secret",
+                                        ),
+                                    ),
+                                ),
                             ],
                             image="ghcr.io/huggingface/text-generation-inference:2.2.0",
                             name="mixtral-8x7b",

@@ -45,7 +45,8 @@ gcloud services enable \
 	  compute.googleapis.com \
 	  container.googleapis.com \
 	  cloudbuild.googleapis.com \
-	  containerregistry.googleapis.com
+	  containerregistry.googleapis.com \
+    secretmanager.googleapis.com
 ```
 
 And finally, we'll do some IAM binding. In short, this will give our Kubernetes cluster the ability to write logs. 

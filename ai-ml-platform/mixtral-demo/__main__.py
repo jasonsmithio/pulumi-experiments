@@ -31,13 +31,14 @@ gke_cluster = gcp.container.Cluster("cluster-1",
     initial_node_count = gke_master_node_count,
     remove_default_node_pool = True,
     min_master_version = gke_master_version,
+    secret_manager_config= True, 
     workload_identity_config=gcp.container.ClusterWorkloadIdentityConfigArgs(
         workload_pool=str(gcp_project)+".svc.id.goog",
     ),
     addons_config=gcp.container.ClusterAddonsConfigArgs(
         gcs_fuse_csi_driver_config={
             "enabled": "True",
-        }, 
+        },
     ),
     node_config=gcp.container.ClusterNodeConfigArgs(
         oauth_scopes=["https://www.googleapis.com/auth/cloud-platform"],
@@ -131,11 +132,25 @@ kubeconfig = kubernetes.Provider('gke_k8s', kubeconfig=k8s_config, opts=pulumi.R
 #    depends_on=[gke_cluster]
 #)
 
-#mixtral =  kubernetes.yaml.ConfigFile(
-#    "mixtral",
-#    file="k8s/mixtral-huggingface.yaml",
-#    opts=pulumi.ResourceOptions(provider=kubeconfig,depends_on=[gke_nodepool]),
-#)
+# Create a ServiceAccount in a Kubernetes cluster for ray-system namespace
+ray_service_account = kubernetes.core.v1.ServiceAccount("k8s-sa",
+    metadata=kubernetes.meta.v1.ObjectMetaArgs(
+        namespace="ray-system",
+        name="ray-sa"
+    ),
+    automount_service_account_token=True
+)
+
+# Get GCP Secret with Hugging Face Key
+hf_secret = gcp.secretmanager.get_secret(secret_id="hf-secret-key")
+
+ray-sa-binding = gcp.secretmanager.SecretIamBinding("binding",
+    project=hf_secret["project"],
+    secret_id=hf_secret["secretId"],
+    role="roles/secretmanager.secretAccessor",
+    members=["user:jane@example.com"])
+
+pulumi.export("service_account_name", ray_service_account.metadata["name"])
 
 deploy = mixtral(kubeconfig)
 
