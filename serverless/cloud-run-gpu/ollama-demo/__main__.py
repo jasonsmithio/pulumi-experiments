@@ -1,7 +1,7 @@
 import pulumi
+from pulumi import Output, Config
 import pulumi_gcp as gcp
 from pulumi_gcp import cloudrunv2 as cloudrun
-from pulumi import Output, Config
 from pulumi_gcp.cloudrun import (
     ServiceTemplateMetadataArgs,
     ServiceTemplateSpecContainerEnvArgs,
@@ -35,88 +35,57 @@ llm_bucket = gcp.storage.Bucket("llm-bucket",
     uniform_bucket_level_access=True,
     )
 
-# Ollama Cloud Run instance cloudrunv1 api
-#ollama_cr_service = gcp.cloudrun.Service(
-#    "ollama-service",
-#    location=gcp_region,
-#    template=gcp.cloudrun.ServiceTemplateArgs(
-#        metadata=ServiceTemplateMetadataArgs(
-#            annotations={
-#                #"run.googleapis.com/cloudsql-instances": cloud_sql_instance.connection_name
-#            }
-#        ),
-#        spec=gcp.cloudrun.ServiceTemplateSpecArgs(
-#            containers=[
-#                gcp.cloudrun.ServiceTemplateSpecContainerArgs(
-#                    image="ollama/ollama",
-#                    resources=gcp.cloudrun.ServiceTemplateSpecContainerResourcesArgs(
-#                        limits={
-#                            "cpu": "8000m",  # 8 CPU cores
-#                            "memory": "32Gi",
-#                            "nvidia.com/gpu": "1",
-#                        }
-#                    ),
-#                )
-#            ],
-#            
-#        ),
-#
-#    ),
-#    traffics=[
-#        gcp.cloudrun.ServiceTrafficArgs(
-#            latest_revision=True,
-#            percent=100,
-#        )
-#    ],
-#)
-
-# Ollama Cloud Run instance cloudrunv1 api
-ollama_cr_service = gcp.cloudrunv2.Service("ollama-service",
+# Ollama Cloud Run instance cloudrunv2 api
+ollama_cr_service = cloudrun.Service("ollama_cr_service",
     name="ollama-service",
     location=gcp_region,
     ingress="INGRESS_TRAFFIC_ALL",
     launch_stage="GA",
     template={
-        "execution_environment": "EXECUTION_ENVIRONMENT_GEN2",
-        "scaling": {        
-            "max_instance_count": 5,
-        },
-        "node_selector": {
-            "run.googleapis.com/accelerator": "nvidia-l4",
-        },
-        "containers": [{
+        "containers":[{
             "image": "ollama/ollama",
             "resources": {
                 "cpuIdle": True,
                 "limits":{
                     "cpu": "8",
                     "memory": "16Gi",
-                    "nvidia.com/gpu": "1",
+                    "nvidia_com_gpu": "1",
                 },
+                "startup_cpu_boost": True,
             },
             "volume_mounts": [{
                 "name": "ollama-bucket",
                 "mount_path": "/root/.ollama/",
             }],
             "startup_probe": {
-                            "initial_delay_seconds": 0,
-                            "timeout_seconds": 1,
-                            "period_seconds": 1,
-                            "failure_threshold": 1800,
-                            "tcp_socket": {
-                                "port": 11434,
-                            },
-                        },
+                "initial_delay_seconds": 0,
+                "timeout_seconds": 1,
+                "period_seconds": 1,
+                "failure_threshold": 1800,
+                "tcp_socket": {
+                    "port": 11434,
+                },
+            },
         }],
-        "volumes": [{
+        "node_selector": {
+            "accelerator": "nvidia-l4", 
+        },
+        "scaling": {      
+            "max_instance_count":4,
+            "min_instance_count":1,
+        },
+        "volumes":[{
             "name": "ollama-bucket",
             "gcs": {
                 "bucket": llm_bucket.name,
                 "read_only": False,
             },
         }],
-        
-    })
+        #"execution_environment": "EXECUTION_ENVIRONMENT_GEN2",
+    }
+)
+
+
 
 ollama_url = ollama_cr_service.uri
 
