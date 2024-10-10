@@ -1,6 +1,7 @@
 import pulumi
 from pulumi import Output, Config
 import pulumi_gcp as gcp
+import pulumi_docker as docker
 from pulumi_gcp import cloudrunv2 as cloudrun
 from pulumi_gcp.cloudrun import (
     ServiceTemplateMetadataArgs,
@@ -35,21 +36,47 @@ llm_bucket = gcp.storage.Bucket("llm-bucket",
     uniform_bucket_level_access=True,
     )
 
+# Artifact Registry Repo for Docker Images
+llm_repo = gcp.artifactregistry.Repository("llm-repo",
+    location=gcp_region,
+    repository_id="openwebui",
+    description="Repo for Open WebUi usage",
+    format="DOCKER",
+    docker_config={
+        "immutable_tags": True,
+    }
+)
+
+# Open WebUI Container
+remote_image = docker.RemoteImage("openwebui",
+    name="ghcr.io/open-webui/open-webui:main"  # Change this to the desired image
+)
+
+# Tag the remote image
+tagged_image = docker.Tag("openwebui-tag",
+    source_image=remote_image.repo_digest,
+    target_image=str(gcp_region)+"/"+str(gcp_project)+"/openwebui/openwebui"  # Change this to the desired new tag and repository
+)
+
+# Export the tag URL
+pulumi.export("tagged_image_url", tagged_image.target_image)
+
 # Ollama Cloud Run instance cloudrunv2 api
 ollama_cr_service = cloudrun.Service("ollama_cr_service",
     name="ollama-service",
     location=gcp_region,
+    deletion_protection= False,
     ingress="INGRESS_TRAFFIC_ALL",
-    launch_stage="GA",
+    launch_stage="BETA",
     template={
         "containers":[{
             "image": "ollama/ollama",
             "resources": {
-                "cpuIdle": True,
+                "cpuIdle": False,
                 "limits":{
                     "cpu": "8",
                     "memory": "16Gi",
-                    "nvidia_com_gpu": "1",
+                    "nvidia.com/gpu": "1",
                 },
                 "startup_cpu_boost": True,
             },
@@ -81,8 +108,7 @@ ollama_cr_service = cloudrun.Service("ollama_cr_service",
                 "read_only": False,
             },
         }],
-        #"execution_environment": "EXECUTION_ENVIRONMENT_GEN2",
-    }
+    },
 )
 
 
@@ -90,34 +116,48 @@ ollama_cr_service = cloudrun.Service("ollama_cr_service",
 ollama_url = ollama_cr_service.uri
 
 # Open WebUI Cloud Run instance
-openwebui_cr_service = gcp.cloudrun.Service(
+openwebui_cr_service = cloudrun.Service(
     "openwebui-service",
     location=gcp_region,
-    template=gcp.cloudrun.ServiceTemplateArgs(
-        spec=gcp.cloudrun.ServiceTemplateSpecArgs(
-            containers=[
-                gcp.cloudrun.ServiceTemplateSpecContainerArgs(
-                    image="ollama/ollama",
-                    envs=[
-                        ServiceTemplateSpecContainerEnvArgs(
-                            name="OLLAMA_BASE_URL",
-                            value=ollama_url,
-                        ),
-                        ServiceTemplateSpecContainerEnvArgs(
-                            name="WEBUI_AUTH",
-                            value='false',
-                        )
-                    ],
-                )
-            ],
-        ),
-    ),
-    traffics=[
-        gcp.cloudrun.ServiceTrafficArgs(
-            latest_revision=True,
-            percent=100,
-        )
-    ],
+    deletion_protection= False,
+    ingress="INGRESS_TRAFFIC_ALL",
+    launch_stage="BETA",
+    template={
+        "containers":[{
+            "image": "us-central1-docker.pkg.dev/"+str(gcp_project)+"/openwebui/openwebui",
+            "envs": [{
+                "name":"OLLAMA_BASE_URL",
+                "value":ollama_url,
+                "name":"WEBUI_AUTH",
+                "value":'false',  
+            }]
+            "resources": {
+                "cpuIdle": False,
+                "limits":{
+                    "cpu": "8",
+                    "memory": "16Gi",
+                },
+                "startup_cpu_boost": True,
+            },
+            "startup_probe": {
+                "initial_delay_seconds": 0,
+                "timeout_seconds": 1,
+                "period_seconds": 1,
+                "failure_threshold": 1800,
+#                "tcp_socket": {
+#                    "port": 11434,
+#                },
+            },
+        }],
+        "scaling": {      
+            "max_instance_count":4,
+            "min_instance_count":1,
+        },
+    },
+    traffics=[{
+        "type": "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST",
+        "percent": 100,
+    }],
     opts=pulumi.ResourceOptions(depends_on=[ollama_cr_service])
 )
 
