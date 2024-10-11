@@ -3,10 +3,6 @@ from pulumi import Output, Config
 import pulumi_gcp as gcp
 import pulumi_docker as docker
 from pulumi_gcp import cloudrunv2 as cloudrun
-from pulumi_gcp.cloudrun import (
-    ServiceTemplateMetadataArgs,
-    ServiceTemplateSpecContainerEnvArgs,
-)
 
 
 # Get some provider-namespaced configuration values
@@ -40,7 +36,7 @@ llm_bucket = gcp.storage.Bucket("llm-bucket",
 llm_repo = gcp.artifactregistry.Repository("llm-repo",
     location=gcp_region,
     repository_id="openwebui",
-    description="Repo for Open WebUi usage",
+    description="Repo for Open WebUI usage",
     format="DOCKER",
     docker_config={
         "immutable_tags": True,
@@ -55,11 +51,12 @@ remote_image = docker.RemoteImage("openwebui",
 # Tag the remote image
 tagged_image = docker.Tag("openwebui-tag",
     source_image=remote_image.repo_digest,
-    target_image=str(gcp_region)+"/"+str(gcp_project)+"/openwebui/openwebui"  # Change this to the desired new tag and repository
+    target_image=str(gcp_region)+"-docker/"+str(gcp_project)+"/openwebui/openwebui"  # Change this to the desired new tag and repository
 )
 
+openwebui_image = tagged_image.target_image
 # Export the tag URL
-pulumi.export("tagged_image_url", tagged_image.target_image)
+#pulumi.export("tagged_image_url", tagged_image.target_image)
 
 # Ollama Cloud Run instance cloudrunv2 api
 ollama_cr_service = cloudrun.Service("ollama_cr_service",
@@ -116,8 +113,7 @@ ollama_cr_service = cloudrun.Service("ollama_cr_service",
 ollama_url = ollama_cr_service.uri
 
 # Open WebUI Cloud Run instance
-openwebui_cr_service = cloudrun.Service(
-    "openwebui-service",
+openwebui_cr_service = cloudrun.Service("openwebui-service",
     location=gcp_region,
     deletion_protection= False,
     ingress="INGRESS_TRAFFIC_ALL",
@@ -130,7 +126,7 @@ openwebui_cr_service = cloudrun.Service(
                 "value":ollama_url,
                 "name":"WEBUI_AUTH",
                 "value":'false',  
-            }]
+            }],
             "resources": {
                 "cpuIdle": False,
                 "limits":{
@@ -158,7 +154,7 @@ openwebui_cr_service = cloudrun.Service(
         "type": "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST",
         "percent": 100,
     }],
-    opts=pulumi.ResourceOptions(depends_on=[ollama_cr_service])
+    opts=pulumi.ResourceOptions(depends_on=[ollama_cr_service]),
 )
 
 

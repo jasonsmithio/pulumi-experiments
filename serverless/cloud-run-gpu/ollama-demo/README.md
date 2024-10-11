@@ -38,6 +38,7 @@ gcloud config set project $PROJECT_ID
 gcloud config set compute/region $REGION
 gcloud config set compute/zone $ZONE
 gcloud auth application-default login
+gcloud auth configure-docker ${REGION}-docker.pkg.dev
 ```
 
 Now that we are authenticated, let's enable some APIs. Every resource in Google Cloud has an API that needs to be enabled. By default, new projects have all APIs turned off so if you are just getting started, it's important to turn them on. You only need to do this once. 
@@ -66,7 +67,6 @@ gcloud projects add-iam-policy-binding $PROJECT_ID \
 --member=serviceAccount:${GCE_SA} --role=roles/stackdriver.resourceMetadata.writer
 ```
 This CAN be configured in Pulumi but for the purposes of this demo, we will set it in terminal. 
-
 
 
 ### Clone Demo Code from GitHub
