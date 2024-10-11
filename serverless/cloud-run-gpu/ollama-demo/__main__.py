@@ -44,19 +44,10 @@ llm_repo = gcp.artifactregistry.Repository("llm-repo",
     }
 )
 
-# Open WebUI Container
-#remote_image = docker.RemoteImage("openwebui-remote",
-#    name="ghcr.io/open-webui/open-webui:main"  # Change this to the desired image
-#)
-
-# Tag the remote image
-#tagged_image = docker.Tag("openwebui-tag",
-#    source_image=remote_image.repo_digest,
-#    target_image=str(gcp_region)+"-docker.pkg.dev/"+str(gcp_project)+"/openwebui/openwebui"  # Change this to the desired new tag and repository
-#)
-
+# Docker image URL
 openwebui_image = str(gcp_region)+"-docker.pkg.dev/"+str(gcp_project)+"/openwebui/openwebui"
 
+# Build and Deploy Docker
 docker_image = docker_build.Image('openwebui',
     tags=[openwebui_image],                                  
     context=docker_build.BuildContextArgs(
@@ -64,10 +55,6 @@ docker_image = docker_build.Image('openwebui',
     ),
     push=True,
 )
-
-
-# Export the tag URL
-#pulumi.export("tagged_image_url", tagged_image.target_image)
 
 # Ollama Cloud Run instance cloudrunv2 api
 ollama_cr_service = cloudrun.Service("ollama_cr_service",
