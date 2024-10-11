@@ -2,6 +2,7 @@ import pulumi
 from pulumi import Output, Config
 import pulumi_gcp as gcp
 import pulumi_docker as docker
+import pulumi_docker_build as docker_build
 from pulumi_gcp import cloudrunv2 as cloudrun
 
 
@@ -44,17 +45,27 @@ llm_repo = gcp.artifactregistry.Repository("llm-repo",
 )
 
 # Open WebUI Container
-remote_image = docker.RemoteImage("openwebui",
-    name="ghcr.io/open-webui/open-webui:main"  # Change this to the desired image
-)
+#remote_image = docker.RemoteImage("openwebui-remote",
+#    name="ghcr.io/open-webui/open-webui:main"  # Change this to the desired image
+#)
 
 # Tag the remote image
-tagged_image = docker.Tag("openwebui-tag",
-    source_image=remote_image.repo_digest,
-    target_image=str(gcp_region)+"-docker/"+str(gcp_project)+"/openwebui/openwebui"  # Change this to the desired new tag and repository
+#tagged_image = docker.Tag("openwebui-tag",
+#    source_image=remote_image.repo_digest,
+#    target_image=str(gcp_region)+"-docker.pkg.dev/"+str(gcp_project)+"/openwebui/openwebui"  # Change this to the desired new tag and repository
+#)
+
+openwebui_image = str(gcp_region)+"-docker.pkg.dev/"+str(gcp_project)+"/openwebui/openwebui"
+
+docker_image = docker_build.Image('openwebui',
+    tags=[openwebui_image],                                  
+    context=docker_build.BuildContextArgs(
+        location="./",
+    ),
+    push=True,
 )
 
-openwebui_image = tagged_image.target_image
+
 # Export the tag URL
 #pulumi.export("tagged_image_url", tagged_image.target_image)
 
@@ -76,6 +87,9 @@ ollama_cr_service = cloudrun.Service("ollama_cr_service",
                     "nvidia.com/gpu": "1",
                 },
                 "startup_cpu_boost": True,
+            },
+            "ports": {
+                "container_port": 11434,
             },
             "volume_mounts": [{
                 "name": "ollama-bucket",
@@ -108,12 +122,20 @@ ollama_cr_service = cloudrun.Service("ollama_cr_service",
     },
 )
 
-
+ollama_binding = cloudrun.ServiceIamBinding("ollama-binding",
+    project=gcp_project,
+    location=gcp_region,
+    name=ollama_cr_service,
+    role="roles/run.invoker",
+    members=["allUsers"],
+    opts=pulumi.ResourceOptions(depends_on=[ollama_cr_service]),
+)
 
 ollama_url = ollama_cr_service.uri
 
 # Open WebUI Cloud Run instance
 openwebui_cr_service = cloudrun.Service("openwebui-service",
+    name="openwebui-service",
     location=gcp_region,
     deletion_protection= False,
     ingress="INGRESS_TRAFFIC_ALL",
@@ -124,6 +146,8 @@ openwebui_cr_service = cloudrun.Service("openwebui-service",
             "envs": [{
                 "name":"OLLAMA_BASE_URL",
                 "value":ollama_url,
+            }
+            ,{
                 "name":"WEBUI_AUTH",
                 "value":'false',  
             }],
@@ -140,9 +164,9 @@ openwebui_cr_service = cloudrun.Service("openwebui-service",
                 "timeout_seconds": 1,
                 "period_seconds": 1,
                 "failure_threshold": 1800,
-#                "tcp_socket": {
-#                    "port": 11434,
-#                },
+                "tcp_socket": {
+                    "port": 8080,
+                },
             },
         }],
         "scaling": {      
@@ -154,9 +178,18 @@ openwebui_cr_service = cloudrun.Service("openwebui-service",
         "type": "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST",
         "percent": 100,
     }],
-    opts=pulumi.ResourceOptions(depends_on=[ollama_cr_service]),
+    opts=pulumi.ResourceOptions(depends_on=[ollama_binding, docker_image]),
+)
+
+openwebui_binding = cloudrun.ServiceIamBinding("openwebui-binding",
+    project=gcp_project,
+    location=gcp_region,
+    name=openwebui_cr_service,
+    role="roles/run.invoker",
+    members=["allUsers"],
+    opts=pulumi.ResourceOptions(depends_on=[openwebui_cr_service]),
 )
 
 
 pulumi.export("ollama_url", ollama_cr_service.uri)
-#pulumi.export("open_webui_url", openwebui_cr_service.statuses[0].url)
+pulumi.export("open_webui_url", openwebui_cr_service.uri)
