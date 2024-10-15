@@ -14,15 +14,6 @@ config = pulumi.Config()
 gcp_project = "cloudmium-1"
 gcp_region = config.get("region", "us-central1")
 gcp_zone = config.get("zone", "us-central1-a")
-gke_network = config.get("gkeNetwork", "default")
-gke_cluster_name = config.get("clusterName", "mixtral-cluster")
-gke_master_version =config.get("master_version", 1.29)
-gke_master_node_count = config.get_int("nodesPerZone", 1)
-
-#setting unique values for the nodepool
-gke_nodepool_name = config.get("nodepoolName", "mixtral-nodepool")
-gke_nodepool_node_count = config.get_int("nodesPerZone", 2)
-gke_ml_machine_type = config.get("mlMachines", "g2-standard-24")
 
 # LLM Bucket
 llm_bucket = gcp.storage.Bucket("llm-bucket",

@@ -134,13 +134,14 @@ Notice how we are using some of the variables we set earlier.
 
 You will see that I have a `__main__.py` file in the main directory. This program will tell Pulumi todo a few things. 
 
-- It will setup all the environment variables for later use ( lines 9-25 )
-- It will create a bucket in Google Cloud Storage to store our LLMs ( lines 27-33 )
-- Create a repo in [Google Artifact Registry](https://cloud.google.com/artifact-registry/docs) for our Docker container. ( Lines 35-44 )
-- Build an Open WebUI container and push it to Artifact Registry ( lines 46-56 )
-- Create a Cloud Run service running Ollama with 1 [NVIDIA L4](https://cloud.google.com/blog/products/compute/introducing-g2-vms-with-nvidia-l4-gpus) GPU attached and change the [IAM](https://cloud.google.com/security/products/iam) settings to make the URL publicly accessible.( lines 58-120 )
-- Create a Cloud Run service running Open WebUI  change the [IAM](https://cloud.google.com/security/products/iam) settings to make the URL publicly accessible.( lines 122-177 )
-- Outputs for the URLs of both Cloud Run servers ( line 180 & 181 )
+- Import the relevant Python libraries ( lines 1-6 )
+- Setup all the environment variables for later use ( lines 9-16 )
+- It will create a bucket in Google Cloud Storage to store our LLMs ( lines 18-23 )
+- Create a repo in [Google Artifact Registry](https://cloud.google.com/artifact-registry/docs) for our Docker container. ( Lines 26-35 )
+- Build an Open WebUI container and push it to Artifact Registry ( lines 37-47 )
+- Create a Cloud Run service running Ollama with 1 [NVIDIA L4](https://cloud.google.com/blog/products/compute/introducing-g2-vms-with-nvidia-l4-gpus) GPU attached and change the [IAM](https://cloud.google.com/security/products/iam) settings to make the URL publicly accessible.( lines 49-111 )
+- Create a Cloud Run service running Open WebUI  change the [IAM](https://cloud.google.com/security/products/iam) settings to make the URL publicly accessible.( lines 113-168 )
+- Outputs for the URLs of both Cloud Run servers ( line 171 & 172 )
 
 This is all Python code. We aren't using a bespoke Domain Specific Language (DSL) such as Hashicorp's HCL. Since this is just Python, it is really easy to add to your workflow. 
 
