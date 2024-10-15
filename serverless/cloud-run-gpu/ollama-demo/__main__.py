@@ -9,6 +9,7 @@ from pulumi_gcp import cloudrunv2 as cloudrun
 # Get some provider-namespaced configuration values
 gconfig = pulumi.Config("gce")
 gcp_project = gconfig.get("gcp:project")
+
 # Get some provider-namespaced configuration values
 config = pulumi.Config()
 gcp_region = config.get("region", "us-central1")
