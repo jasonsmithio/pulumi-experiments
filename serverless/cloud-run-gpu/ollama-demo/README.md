@@ -1,10 +1,14 @@
 # Cloud Run with GPUs attached Pulumi demo
 
-**NOTE** This product isn't GA yet but you can request being added to the allowlist by filling out [this form](g.co/cloudrun/GPU).
+**>>NOTE This product isn't GA yet but you can request being added to the allowlist by filling out [this form](g.co/cloudrun/GPU).<<**
+
+On August 21, 2024 Google Cloud [announced](https://cloud.google.com/blog/products/application-development/run-your-ai-inference-applications-on-cloud-run-with-nvidia-gpus) that [Cloud Run](https://cloud.run/) now supports GPUs. This means that GPUs can run in a serverless environment. It follows that same pay-per-use model as Cloud Run and other serverless products in the market. It can also scale-to-zero and autoscaling! 
+
+One of the coolest things about this is that we have significantly reduced the cold start process of GPUs so you can launch an LLM service with a GPU attached and be ready to inference with it in under a minute. Normally, it takes at least a minute to just install GPU drivers on VMs. This offering is game changing in the world of Generative AI.
 
 In this tutorial, I will show you how to deploy an LLM on Cloud Run with GPUs attached and it will take less than a minute. We will be leveraging the [Gemma 2](https://developers.googleblog.com/en/gemma-explained-new-in-gemma-2/) 2B LLM and will be serving it with [Ollama](https://ollama.com/).  
 
-We will aldo deploy a Cloud Run service with [Open WebUI](https://openwebui.com/) to help us interface. 
+We will also deploy a Cloud Run service with [Open WebUI](https://openwebui.com/) to help us interface. 
 
 
 ## What is Gemma 2?
@@ -34,6 +38,8 @@ So let's get started.
 ### Before we get started... 
 Make sure you have access to a Google Cloud project that supports NVIDIA L4s in your desired region per your quotas. This tutorial uses `us-central1` for the moment as Cloud Run GPUs isn't GA yet and is in limited regions. 
 
+We will also be using Pulumi to create a Docker container using their new [Docker Build Provider](https://www.pulumi.com/blog/docker-build/). This will work best if you have Docker installed. If you don't, you can do so by following [these instructions](https://docs.docker.com/engine/install/).
+
 ### Some Environment Variables
 
 Before we get started, we will set a few basic environment variables in our terminal. This will make things easier for us as we move forward. Copy and paste the below snippet into your terminal. Be sure to set your `PROJECT_ID` and `NETWORK`. You may be able to set the network to *default* as there is usually a default network in a brand new environment.  
@@ -49,7 +55,8 @@ export NETWORK=<your network>
 
 ### Configuring the Google Cloud Platform (GCP) environment
 
-Now that the variables are set, let's make sure that your GCP environment is setup and that you are authenticated. 
+Now that the variables are set, let's make sure that your GCP environment is setup and that your terminal is properly setup and authenticated to interface with GCP. The final line is going to be useful later when we build our Docker container as it will setup `gcloud` as a [Docker Credentials Helper](https://github.com/docker/docker-credential-helpers).
+
 
 ```bash
 gcloud auth login 
@@ -73,7 +80,7 @@ gcloud services enable \
         run.googleapis.com
 ```
 
-And finally, we'll do some IAM binding. In short, this will give our Cloud Run services the ability to write logs. 
+And finally, we'll do set a few more environment variables and perform some IAM binding. In short, this will give our Cloud Run services the ability to write logs.
 
 ```bash
 PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format='value(projectNumber)')
@@ -100,11 +107,13 @@ cd pulumi-experiments/serverless/cloud-run-gpu/ollama-demo
 
 ### Staging Pulumi Environment
 
-The first thing we need to do is setup a Pulumi Stack
+The first thing we need to do is setup a [Pulumi Stack](https://www.pulumi.com/docs/iac/concepts/stacks/).
 
 ```bash
 pulumi stack init
 ```
+
+It will ask you to name your stack so name it whatever you choose (e.g. `ollama-demo`).
 
 ### Settings some variables
 
@@ -202,5 +211,5 @@ Best practices are to always clean up after your experiments. Simply enter the b
 pulumi destroy
 ```
 
-choose `Y` to destroy and in about 5 minutes, everything will be removed. 
+choose `yes` to destroy and in about 5 minutes, everything will be removed. 
 
