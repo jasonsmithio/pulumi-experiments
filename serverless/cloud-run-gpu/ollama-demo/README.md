@@ -2,18 +2,37 @@
 
 **NOTE** This product isn't GA yet but you can request being added to the allowlist by filling out [this form](g.co/cloudrun/GPU).
 
-This is a very basic tutorial on how to get started with GCP on Cloud. This is based on another tutorial I made with regards to [AI on GKE](https://github.com/jasonsmithio/ai-on-gke/tree/main/mixtral-on-gke).
+In this tutorial, I will show you how to deploy an LLM on Cloud Run with GPUs attached and it will take less than a minute. We will be leveraging the [Gemma 2](https://developers.googleblog.com/en/gemma-explained-new-in-gemma-2/) 2B LLM and will be serving it with [Ollama](https://ollama.com/).  
 
-This example will demostrate how to serve [Mixtral 8X7B](https://mistral.ai/news/mixtral-of-experts/ "Mixtral 8X7B") model on [NVIDIA L4 GPUs](https://cloud.google.com/compute/docs/gpus#l4-gpus "NVIDIA L4 GPUs") running on Google Cloud Kubernetes Engine (GKE). It will help you understand the AI/ML ready features of GKE and how to use them to serve large language models.
+We will aldo deploy a Cloud Run service with [Open WebUI](https://openwebui.com/) to help us interface. 
 
-## What is Mistral?
 
-Mixtral 8X7B is the latest LLM provided by [Mistral.ai](https://mistral.ai "Mistral.ai"). You can learn more about it [here](https://mistral.ai/news/mixtral-of-experts/). To interface with the model, we will be using [Hugging Face](https://huggingface.co/mistralai/Mixtral-8x7B-v0.1) and it's [text generation inference](https://huggingface.co/docs/text-generation-inference/en/index).
+## What is Gemma 2?
 
-## Before we get started... 
-Make sure you have access to a Google Cloud project that supports NVIDIA L4s in your desired region per your quotas. This tutorial uses `us-central1` but you can use a different one if you choose to do so. Also make sure that you have acceess to a terminal that can execute `kubectl`.
+Gemma is a family of open-use, lightweight LLMs provided by Google that anyone can use to greate Generative AI applications. I don't like to call it "Open Source" because it technically isn't. Google refers to it as an ["open model"](https://opensource.googleblog.com/2024/02/building-open-models-responsibly-gemini-era.html). The distinction is that with true open source licenses, the user can theoretically do whatever they want with the software. 
+
+Generative AI and LLMs are a bit different. They are incredibly useful tools but they can also be misused very easily for things that violate [Google's Principles around AI Responsibility](https://ai.google/responsibility/principles/). So people are free to use Gemma but there are restrictions to prevent misuse.
+
+That aside, it is a very powerful LLM and it's free to use pretty much wherever you please. You could run it on your laptop or in the cloud. 
+
+## What is Ollama?
+
+Ollama is an open source project that makes it easier to use and consume LLMs. One way to think about it is that if the LLM is an application, Ollama is the operating system or platform that the LLM runs on. To use an LLM you have to interface with it in some way. While you could create custom software to accomplish this, there are a number of powerful tools that simpilifies the experience in a user-friendly way. 
+
+Ollama is the one that I have chosen for this demo. Ollama just works. It is simple to setup and use for inferencing and integrates great with Python if you are building binaries to inference with the LLM. It's also lightweight enough for this demo. 
+
+Ollama supports [many different LLMs](https://ollama.com/library) so you could do this demo with [Mistral NeMo](https://mistral.ai/news/mistral-nemo/) or [Llama 3.2](https://ai.meta.com/blog/llama-3-2-connect-2024-vision-edge-mobile-devices/) or any number of other LLMs supported by Ollama. I just chose Ollama and Gemma. 
+
+## What is Open WebUI?
+
+Open WebUI is an open source UI for LLMs. Rather than trying to develop your own UI, you can leverage this to help you work with Ollama. You can also developer your own using the [Ollama API](https://github.com/ollama/ollama/blob/main/docs/api.md) but for our purposes, this is simpler.
+
+So let's get started. 
 
 ## Some Pre-requesites 
+
+### Before we get started... 
+Make sure you have access to a Google Cloud project that supports NVIDIA L4s in your desired region per your quotas. This tutorial uses `us-central1` for the moment as Cloud Run GPUs isn't GA yet and is in limited regions. 
 
 ### Some Environment Variables
 
@@ -50,10 +69,11 @@ gcloud services enable \
         container.googleapis.com \
         cloudbuild.googleapis.com \
         containerregistry.googleapis.com \
-        storage.googleapis.com
+        storage.googleapis.com \
+        run.googleapis.com
 ```
 
-And finally, we'll do some IAM binding. In short, this will give our Kubernetes cluster the ability to write logs. 
+And finally, we'll do some IAM binding. In short, this will give our Cloud Run services the ability to write logs. 
 
 ```bash
 PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format='value(projectNumber)')
@@ -66,7 +86,7 @@ gcloud projects add-iam-policy-binding $PROJECT_ID \
 gcloud projects add-iam-policy-binding $PROJECT_ID \
 --member=serviceAccount:${GCE_SA} --role=roles/stackdriver.resourceMetadata.writer
 ```
-This CAN be configured in Pulumi but for the purposes of this demo, we will set it in terminal. 
+This CAN be configured in Pulumi but for the purposes of this demo, we will set it in terminal. In a future demo, I may show you how to use their new [ESC](https://www.pulumi.com/product/secrets-management/) feature.
 
 
 ### Clone Demo Code from GitHub
@@ -88,7 +108,7 @@ pulumi stack init
 
 ### Settings some variables
 
-In our Python demo, we will be standing up a GKE Cluster. Pulumi allows us to [configur](https://www.pulumi.com/docs/concepts/config/) environment variables in a `Pulumi.<env>.yaml` file. While you can manually build the file, you can also just execute the commands below.
+In our Python demo, we will be standing up a GKE Cluster. Pulumi allows us to [configure](https://www.pulumi.com/docs/concepts/config/) environment variables in a `Pulumi.<env>.yaml` file. While you can manually build the file, you can also just execute the commands below.
 
 ```bash
 pulumi config set gcp:project $PROJECT_ID
@@ -103,136 +123,84 @@ Notice how we are using some of the variables we set earlier.
 
 ## Pulumi and Python
 
-You will see that I have a `__main__.py` file in the root. This program will tell Pulumi to build a Kubernetes cluster with machine type *n2d-standard-4*. It will also create a separate nodepool with *g2-standard-24* machines. This machine type is needed to run the [NVIDIA L4s](https://cloud.google.com/blog/products/compute/introducing-g2-vms-with-nvidia-l4-gpus).
+You will see that I have a `__main__.py` file in the main directory. This program will tell Pulumi todo a few things. 
 
-Once completed, it will create a [kubeconfig](https://kubernetes.io/docs/concepts/configuration/organize-cluster-access-kubeconfig/) so that we can access the cluster. In the `k8s` directory, you will see that I created a `mixtral.py` file. This Python module will deploy the Kubernetes deployment and a service. While [Gateways](https://kubernetes.io/docs/concepts/services-networking/gateway/) are the current best practice for exposing a Kubernetes workload, for the purposes of this demo, we are using a [LoadBalancer](https://kubernetes.io/docs/tasks/access-application-cluster/create-external-load-balancer/).
+- It will setup all the environment variables for later use ( lines 9-25 )
+- It will create a bucket in Google Cloud Storage to store our LLMs ( lines 27-33 )
+- Create a repo in [Google Artifact Registry](https://cloud.google.com/artifact-registry/docs) for our Docker container. ( Lines 35-44 )
+- Build an Open WebUI container and push it to Artifact Registry ( lines 46-56 )
+- Create a Cloud Run service running Ollama with 1 [NVIDIA L4](https://cloud.google.com/blog/products/compute/introducing-g2-vms-with-nvidia-l4-gpus) GPU attached and change the [IAM](https://cloud.google.com/security/products/iam) settings to make the URL publicly accessible.( lines 58-120 )
+- Create a Cloud Run service running Open WebUI  change the [IAM](https://cloud.google.com/security/products/iam) settings to make the URL publicly accessible.( lines 122-177 )
+- Outputs for the URLs of both Cloud Run servers ( line 180 & 181 )
 
-The `mixtral.py` module is just a containerized version of the `mixtral-huggingface.yaml` file in the same directory. The file looks like this
+This is all Python code. We aren't using a bespoke Domain Specific Language (DSL) such as Hashicorp's HCL. Since this is just Python, it is really easy to add to your workflow. 
 
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: mixtral-8x7b
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: mixtral-8x7b
-  template:
-    metadata:
-      labels:
-        app: mixtral-8x7b
-    spec:
-      containers:
-      - name: mixtral-8x7b
-        image: ghcr.io/huggingface/text-generation-inference:1.4.2
-        resources:
-          limits:
-            nvidia.com/gpu: 2
-        ports:
-        - name: server-port
-          containerPort: 80
-        env:
-        - name: MODEL_ID
-          value: mistralai/Mixtral-8x7B-v0.1
-        - name: NUM_SHARD
-          value: "2"
-        - name: MAX_BATCH_TOTAL_TOKENS
-          value: "1024000"
-        - name: MAX_BATCH_TOKENS
-          value: "32000"
-        - name: PYTORCH_CUDA_ALLOC_CONF
-          value: "max_split_size_mb:512"
-        - name: QUANTIZE
-          value: "bitsandbytes-nf4"
-        #- name: PORT
-        #  value: "3000"
-        volumeMounts:
-          - mountPath: /dev/shm
-            name: dshm
-          - mountPath: /data
-            name: data
-      volumes:
-         - name: dshm
-           emptyDir:
-              medium: Memory
-         - name: data
-           hostPath:
-            path: /mnt/stateful_partition/kube-ephemeral-ssd/mistral-data
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: mixtral-8x7b-service
-  namespace: default
-spec:
-  type: LoadBalancer
-  ports:
-  - port: 80
-    targetPort: 80
-  selector:
-    app: mixtral-8x7b
-```
+## Let Pulumi build you resources!
 
-Now I want to let you in on a secret. I didn't convert the YAML manifest manually. I used a neat tool called[`pulumi convert`](https://www.pulumi.com/docs/cli/commands/pulumi_convert/). I ran the command `pulumi convert --from kubernetes --language python` and it generated a Python file that I was then able to convert. 
-
-## Standing Up Our Pulumi Environment
-
-We will execute now let Pulumi take our Python program and deploy
+We will execute now let Pulumi take our Python program and deploy.
 
 ```bash
 pulumi up
 ```
 
-### Testing
+It will run a test first to make sure that everything looks good. After that test runs, it will ask you if you want to execute so choose `yes` and deploy. This can take a few minutes to launch but I want you to take notice of how long it takes the `ollama_cr_service` to run.
 
-At this point, you should be able to access the model via URL. You may be curious, what can you do now. Well let's look at the documentation. 
+![pulumi-services](./images/pulumi-services.png)
 
-This step is also a good way to test if your model is running. Let's get the IP address of our service. 
+**52 Seconds!** You have an LLM deployed with a GPU attached and ready to go in under a minute! This is mind blowing! Anyone who has provisioned machines with GPUs will tell you that this is amazing. 
+
+When you are ready you should see something like this 
+
+![pulumi-complete](./images/pulumi-complete.png)
+
+If you see this, we are ready to test. But before we move to the next step, you should see a section called "Outputs" and under that `ollama_url` followed by a URL. Copy that URL and save it into a variable
 
 ```bash
-URL=$(kubectl get service mixtral-8x7b-service -o jsonpath=’{.status.loadBalancer.ingress[0].ip}’)
-echo “http://${URL}/docs"
+URL=<your ollama_url>
 ```
 
-The `echo` command will give you a URL that you can copy and paste into your browser. You should see something like this. 
+This will come in handy later. So let's move forward. 
 
-![Mistral Docs Image](images/mixtral-docs-page.png)
+### Testing
 
-If you see something similar to that image, congratulations, everything is working. If not, give it another 5 or so minutes and try again. 
+You have a few ways to test this. 
 
-If you click around, you can get sample documentation to show you how to call the Mixtral APIs and use the LLM. For example, choose the very first option. It will say `POST /`. You will see an option that says *Try It Out*. Click that and then a sample JSON body will apear. Click execute and it will run and give you a response. 
+#### Ollama CLI
 
-If you want to do a real test, choose the `/generate` option. 
+Ollama has a nice CLI tool. You can install it by checking the instructions [here](https://github.com/ollama/ollama) that's relevant to your OS.
 
-```json
-{
- "inputs": "[INST] You are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe. Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. Please ensure that your responses are socially unbiased and positive in nature. If a question does not make any sense, or is not factually coherent, explain why instead of answering something not correct. If you don’t know the answer to a question, please don’t share false information. What is a Kubernetes secret?[/INST]",
- "parameters": {
- "best_of": 1,
- "do_sample": true,
- "max_new_tokens": 400,
- "repetition_penalty": 1.03,
- "return_full_text": false,
- "temperature": 0.5,
- "top_k": 10,
- "top_n_tokens": 5,
- "top_p": 0.95,
- "truncate": null,
- "typical_p": 0.95,
- "watermark": true
- }
-}
+If you are using a *nix OS, you can now run the following command to download Gemma2:2b
+
+```bash
+OLLAMA_HOST=$URL ollama run gemma2:2b
 ```
 
+The initial run will take a few minutes to complete. This is became Ollama is downloading the LLM and will be storing it in a mounted [Google Cloud Storage Bucket](https://cloud.google.com/storage). This way, if you want to use the same LLM in the future, it will not have to download the LLM and just inference. 
+
+When done, you should see something like this:
+
+```bash
+>>> Send a message (/? for help)
+```
+
+If you see that, you are ready to inference. Ask the LLM a question such as "which Final Fantasy is the best" and see what happens. 
+
+
+#### Open Web UI
+
+Back in your terminal, you should see an output for `open_webui_url`. Copy that URL and put it in your browser. This will launch Open WebUI for you. 
+
+In the upper right hand corner, you should see "Select A Model". Choose `gemma2:2b1` and then type a question in the "How Can I help you today?" bar. Ask your question and see what happens. 
+
+I would recommend doing this after the CLI as it will download `gemma2:2b` for you and you won't have to do it in the UI. 
 
 ## Clean Up
 
-This LLM on GKE experiment will be expensive so once you are done, you will want to delete it. You can do this simply by running the following command. 
+Best practices are to always clean up after your experiments. Simply enter the below command.
 
 ```bash
 pulumi destroy
 ```
 
-choose `Y` to destroy and in about 15-30 minutes, everything will be removed. 
+choose `Y` to destroy and in about 5 minutes, everything will be removed. 
+

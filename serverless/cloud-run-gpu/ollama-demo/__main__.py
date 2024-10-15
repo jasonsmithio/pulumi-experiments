@@ -25,7 +25,6 @@ gke_nodepool_node_count = config.get_int("nodesPerZone", 2)
 gke_ml_machine_type = config.get("mlMachines", "g2-standard-24")
 
 # LLM Bucket
-
 llm_bucket = gcp.storage.Bucket("llm-bucket",
     name=str(gcp_project)+"-llm-bucket",
     location=gcp_region,
