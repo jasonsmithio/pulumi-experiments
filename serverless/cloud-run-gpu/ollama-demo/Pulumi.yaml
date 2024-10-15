@@ -1,4 +1,4 @@
-name: project
+name: ollama-demo
 runtime:
   name: python
   options:

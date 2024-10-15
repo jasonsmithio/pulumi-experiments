@@ -46,11 +46,10 @@ Before we get started, we will set a few basic environment variables in our term
 
 ```bash
 export PROJECT_ID=<your-project-id>
-export REGION=<your region>
+export REGION="us-central1"
 export ZONE=${REGION}-a 
 export PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format='value(projectNumber)')
 export GCE_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
-export NETWORK=<your network>
 ```
 
 ### Configuring the Google Cloud Platform (GCP) environment
@@ -83,9 +82,6 @@ gcloud services enable \
 And finally, we'll do set a few more environment variables and perform some IAM binding. In short, this will give our Cloud Run services the ability to write logs.
 
 ```bash
-PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format='value(projectNumber)')
-GCE_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
-
 gcloud projects add-iam-policy-binding $PROJECT_ID \
 --member=serviceAccount:${GCE_SA} --role=roles/storage.admin
 gcloud projects add-iam-policy-binding $PROJECT_ID \
@@ -121,10 +117,8 @@ In our Python demo, we will be standing up a GKE Cluster. Pulumi allows us to [c
 
 ```bash
 pulumi config set gcp:project $PROJECT_ID
-pulumi config set projectNumber $PROJECT_NUMBER
-pulumi config set gceSA $GCE_SA  
-pulumi config set region $REGION
-pulumi config set zone $ZONE
+pulumi config set gcp:region $REGION
+pulumi config set gcp:zone $ZONE
 ```
 
 Notice how we are using some of the variables we set earlier.
@@ -135,13 +129,13 @@ Notice how we are using some of the variables we set earlier.
 You will see that I have a `__main__.py` file in the main directory. This program will tell Pulumi todo a few things. 
 
 - Import the relevant Python libraries ( lines 1-6 )
-- Setup all the environment variables for later use ( lines 9-16 )
-- It will create a bucket in Google Cloud Storage to store our LLMs ( lines 18-23 )
-- Create a repo in [Google Artifact Registry](https://cloud.google.com/artifact-registry/docs) for our Docker container. ( Lines 26-35 )
-- Build an Open WebUI container and push it to Artifact Registry ( lines 37-47 )
-- Create a Cloud Run service running Ollama with 1 [NVIDIA L4](https://cloud.google.com/blog/products/compute/introducing-g2-vms-with-nvidia-l4-gpus) GPU attached and change the [IAM](https://cloud.google.com/security/products/iam) settings to make the URL publicly accessible.( lines 49-111 )
-- Create a Cloud Run service running Open WebUI  change the [IAM](https://cloud.google.com/security/products/iam) settings to make the URL publicly accessible.( lines 113-168 )
-- Outputs for the URLs of both Cloud Run servers ( line 171 & 172 )
+- Setup all the environment variables for later use ( lines 9-13 )
+- It will create a bucket in Google Cloud Storage to store our LLMs ( lines 15-21 )
+- Create a repo in [Google Artifact Registry](https://cloud.google.com/artifact-registry/docs) for our Docker container. ( Lines 23-32 )
+- Build an Open WebUI container and push it to Artifact Registry ( lines 34-44 )
+- Create a Cloud Run service running Ollama with 1 [NVIDIA L4](https://cloud.google.com/blog/products/compute/introducing-g2-vms-with-nvidia-l4-gpus) GPU attached and change the [IAM](https://cloud.google.com/security/products/iam) settings to make the URL publicly accessible.( lines 46-108 )
+- Create a Cloud Run service running Open WebUI  change the [IAM](https://cloud.google.com/security/products/iam) settings to make the URL publicly accessible.( lines 110-165 )
+- Outputs for the URLs of both Cloud Run servers ( line 168 & 169 )
 
 This is all Python code. We aren't using a bespoke Domain Specific Language (DSL) such as Hashicorp's HCL. Since this is just Python, it is really easy to add to your workflow. 
 

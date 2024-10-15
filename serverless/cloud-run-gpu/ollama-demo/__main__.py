@@ -6,14 +6,11 @@ import pulumi_docker_build as docker_build
 from pulumi_gcp import cloudrunv2 as cloudrun
 
 
-# Get some provider-namespaced configuration values
-gconfig = pulumi.Config("gce")
-gcp_project = gconfig.get("gcp:project")
-
-# Get some provider-namespaced configuration values
-config = pulumi.Config()
-gcp_region = config.get("region", "us-central1")
-gcp_zone = config.get("zone", "us-central1-a")
+# Get some provider-namespaced configuration values such as project
+gconfig = pulumi.Config("gcp")
+gcp_project = gconfig.require("project")
+gcp_region = gconfig.get("region", "us-central1")
+gcp_zone = gconfig.get("zone", "us-central1-a")
 
 # LLM Bucket
 llm_bucket = gcp.storage.Bucket("llm-bucket",
