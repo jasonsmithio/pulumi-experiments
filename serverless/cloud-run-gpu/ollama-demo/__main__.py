@@ -11,7 +11,6 @@ gconfig = pulumi.Config("gce")
 gcp_project = gconfig.get("gcp:project")
 # Get some provider-namespaced configuration values
 config = pulumi.Config()
-gcp_project = "cloudmium-1"
 gcp_region = config.get("region", "us-central1")
 gcp_zone = config.get("zone", "us-central1-a")
 
