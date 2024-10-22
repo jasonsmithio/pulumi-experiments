@@ -136,10 +136,10 @@ You will see that I have a `__main__.py` file in the main directory. This progra
 - Setup all the environment variables for later use ( lines 9-13 )
 - It will create a bucket in Google Cloud Storage to store our LLMs ( lines 15-21 )
 - Create a repo in [Google Artifact Registry](https://cloud.google.com/artifact-registry/docs) for our Docker container. ( Lines 23-32 )
-- Build an Open WebUI container and push it to Artifact Registry ( lines 34-44 )
-- Create a Cloud Run service running Ollama with 1 [NVIDIA L4](https://cloud.google.com/blog/products/compute/introducing-g2-vms-with-nvidia-l4-gpus) GPU attached and change the [IAM](https://cloud.google.com/security/products/iam) settings to make the URL publicly accessible.( lines 46-108 )
-- Create a Cloud Run service running Open WebUI  change the [IAM](https://cloud.google.com/security/products/iam) settings to make the URL publicly accessible.( lines 110-165 )
-- Outputs for the URLs of both Cloud Run servers ( line 168 & 169 )
+- Build an Open WebUI container and push it to Artifact Registry ( lines 34-48 )
+- Create a Cloud Run service running Ollama with 1 [NVIDIA L4](https://cloud.google.com/blog/products/compute/introducing-g2-vms-with-nvidia-l4-gpus) GPU attached and change the [IAM](https://cloud.google.com/security/products/iam) settings to make the URL publicly accessible.( lines 50-112 )
+- Create a Cloud Run service running Open WebUI  change the [IAM](https://cloud.google.com/security/products/iam) settings to make the URL publicly accessible.( lines 114-169 )
+- Outputs for the URLs of both Cloud Run servers ( line 172 & 173 )
 
 This is all Python code. We aren't using a bespoke Domain Specific Language (DSL) such as Hashicorp's HCL. Since this is just Python, it is really easy to add to your workflow. 
 
