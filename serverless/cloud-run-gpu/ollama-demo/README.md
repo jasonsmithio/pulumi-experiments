@@ -134,7 +134,7 @@ You will see that I have a `__main__.py` file in the main directory. This progra
 
 - Import the relevant Python libraries ( lines 1-6 )
 - Setup all the environment variables for later use ( lines 9-13 )
-- It will create a bucket in Google Cloud Storage to store our LLMs ( lines 15-21 )
+- It will create a bucket in Google Cloud Storage to store our LLMs. This will prevent the service from having to download the LLMs every time you start the Cloud Run service. ( lines 15-21 )
 - Create a repo in [Google Artifact Registry](https://cloud.google.com/artifact-registry/docs) for our Docker container. ( Lines 23-32 )
 - Build an Open WebUI container and push it to Artifact Registry ( lines 34-48 )
 - Create a Cloud Run service running Ollama with 1 [NVIDIA L4](https://cloud.google.com/blog/products/compute/introducing-g2-vms-with-nvidia-l4-gpus) GPU attached and change the [IAM](https://cloud.google.com/security/products/iam) settings to make the URL publicly accessible.( lines 50-112 )
@@ -171,7 +171,7 @@ This will come in handy later. So let's move forward.
 
 ### Testing
 
-You have a few ways to test this. 
+You have a few ways to test this. I would highly recommend running the Ollama CLI first. The reason is that you first need to download the LLM. It's easier to do this with the CLI than to navigate through the Open WebUI to do the same. Once the LLM is downloaded, it will be stored in the [Google Cloud Storage](https://cloud.google.com/storage) bucket that we created. You can actually [go into the console and see the bucket](https://console.cloud.google.com/storage/browser). After running the CLI, you should see new objects.
 
 #### Ollama CLI
 
@@ -200,7 +200,7 @@ Back in your terminal, you should see an output for `open_webui_url`. Copy that 
 
 In the upper right hand corner, you should see "Select A Model". Choose `gemma2:2b1` and then type a question in the "How Can I help you today?" bar. Ask your question and see what happens. 
 
-I would recommend doing this after the CLI as it will download `gemma2:2b` for you and you won't have to do it in the UI. 
+I would again highly recommend doing this after the CLI as it will download `gemma2:2b` for you and you won't have to do it in the UI. 
 
 ## Clean Up
 
