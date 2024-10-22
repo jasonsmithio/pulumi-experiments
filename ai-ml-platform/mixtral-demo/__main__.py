@@ -4,22 +4,19 @@ import pulumi_kubernetes as kubernetes
 from k8s.mixtral import Mixtral as mixtral
 
 # Get some provider-namespaced configuration values
-gconfig = pulumi.Config("gce")
-gcp_project = gconfig.get("gcp:project")
-# Get some provider-namespaced configuration values
-config = pulumi.Config()
-gcp_project = "cloudmium-1"
-gcp_region = config.get("region", "us-central1")
-gcp_zone = config.get("zone", "us-central1-a")
-gke_network = config.get("gkeNetwork", "default")
-gke_cluster_name = config.get("clusterName", "mixtral-cluster")
-gke_master_version =config.get("master_version", 1.29)
-gke_master_node_count = config.get_int("nodesPerZone", 1)
+gconfig = pulumi.Config("gcp")
+gcp_project = gconfig.require("project")
+gcp_region = gconfig.get("region", "us-central1")
+gcp_zone = gconfig.get("zone", "us-central1-a")
+gke_network = gconfig.get("gkeNetwork", "default")
+gke_cluster_name = gconfig.get("clusterName", "mixtral-cluster")
+gke_master_version = gconfig.get("master_version", 1.29)
+gke_master_node_count = gconfig.get_int("nodesPerZone", 1)
 
 #setting unique values for the nodepool
-gke_nodepool_name = config.get("nodepoolName", "mixtral-nodepool")
-gke_nodepool_node_count = config.get_int("nodesPerZone", 2)
-gke_ml_machine_type = config.get("mlMachines", "g2-standard-24")
+gke_nodepool_name = gconfig.get("nodepoolName", "mixtral-nodepool")
+gke_nodepool_node_count = gconfig.get_int("nodesPerZone", 2)
+gke_ml_machine_type = gconfig.get("mlMachines", "g2-standard-24")
 
 # Create a cluster in the new network and subnet
 gke_cluster = gcp.container.Cluster("cluster-1", 
@@ -31,7 +28,9 @@ gke_cluster = gcp.container.Cluster("cluster-1",
     initial_node_count = gke_master_node_count,
     remove_default_node_pool = True,
     min_master_version = gke_master_version,
-    secret_manager_config= True, 
+    secret_manager_config=gcp.container.ClusterSecretManagerConfigArgs(
+        enabled=True,
+    ),
     workload_identity_config=gcp.container.ClusterWorkloadIdentityConfigArgs(
         workload_pool=str(gcp_project)+".svc.id.goog",
     ),
@@ -132,27 +131,31 @@ kubeconfig = kubernetes.Provider('gke_k8s', kubeconfig=k8s_config, opts=pulumi.R
 #    depends_on=[gke_cluster]
 #)
 
-# Create a ServiceAccount in a Kubernetes cluster for ray-system namespace
-ray_service_account = kubernetes.core.v1.ServiceAccount("k8s-sa",
+# Create a ServiceAccount in a Kubernetes cluster for default namespace
+hf_service_account = kubernetes.core.v1.ServiceAccount("k8s-sa",
     metadata=kubernetes.meta.v1.ObjectMetaArgs(
-        namespace="ray-system",
-        name="ray-sa"
+        namespace="default",
+        name="hf-sa"
     ),
-    automount_service_account_token=True
+    automount_service_account_token=True,
+    opts=pulumi.ResourceOptions(provider=kubeconfig)
 )
+
+
+deploy = mixtral(kubeconfig)
 
 # Get GCP Secret with Hugging Face Key
 hf_secret = gcp.secretmanager.get_secret(secret_id="hf-secret-key")
 
-ray-sa-binding = gcp.secretmanager.SecretIamBinding("binding",
-    project=hf_secret["project"],
-    secret_id=hf_secret["secretId"],
+# IAM Bindings
+ray_sa_binding = gcp.secretmanager.SecretIamBinding("binding",
+    #project=hf_secret["project"],
+    secret_id=hf_secret.id,
+    #secret_id="hf-secret-key",
     role="roles/secretmanager.secretAccessor",
-    members=["user:jane@example.com"])
+    members=["principal://iam.googleapis.com/projects/"+str(gcp_project)+"/locations/global/workloadIdentityPools/"+str(gcp_project)+".svc.id.goog/subject/ns/default/sa/"+str(hf_service_account.metadata['name'])])
 
-pulumi.export("service_account_name", ray_service_account.metadata["name"])
-
-deploy = mixtral(kubeconfig)
+#pulumi.export("service_account_name", ray_service_account.metadata["name"])
 
 service = deploy.mixtralService()
 deployment = deploy.mixtral8x7b()
@@ -165,3 +168,4 @@ service_ip = service.status.apply(
 pulumi.export('service_ip', service_ip)
 pulumi.export("clusterName", gke_cluster.name)
 pulumi.export("clusterId", gke_cluster.id)
+pulumi.export("service_account_name", hf_service_account.metadata['name'])

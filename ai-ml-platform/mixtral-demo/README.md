@@ -49,6 +49,14 @@ gcloud services enable \
     secretmanager.googleapis.com
 ```
 
+We will create a secret for our Hugging Face Key
+
+```bash
+echo -n "<MY HUGGING FACE KEY>" | gcloud secrets create hf-secret-key \
+    --replication-policy="automatic" \
+    --data-file=-
+```
+
 And finally, we'll do some IAM binding. In short, this will give our Kubernetes cluster the ability to write logs. 
 
 ```bash
@@ -87,10 +95,10 @@ In our Python demo, we will be standing up a GKE Cluster. Pulumi allows us to [c
 
 ```bash
 pulumi config set gcp:project $PROJECT_ID
+pulumi config set gcp:region $REGION
+pulumi config set gcp:zone $ZONE
 pulumi config set projectNumber $PROJECT_NUMBER
 pulumi config set gceSA $GCE_SA  
-pulumi config set region $REGION
-pulumi config set zone $ZONE
 pulumi config set gkeNetwork $NETWORK
 pulumi config set clusterName mixtral-gke-cluster
 pulumi config set master_version 1.27

@@ -38,7 +38,11 @@ So let's get started.
 ### Before we get started... 
 Make sure you have access to a Google Cloud project that supports NVIDIA L4s in your desired region per your quotas. This tutorial uses `us-central1` for the moment as Cloud Run GPUs isn't GA yet and is in limited regions. 
 
+We will also be using [Pulumi](https://www.pulumi.com/) for this demo. You can create a free account at [https://app.pulumi.com/signup](https://app.pulumi.com/signup) if you don't already have one. They also provide some useful "getting started" docs [here](https://www.pulumi.com/docs/iac/get-started/).
+
 We will also be using Pulumi to create a Docker container using their new [Docker Build Provider](https://www.pulumi.com/blog/docker-build/). This will work best if you have Docker installed. If you don't, you can do so by following [these instructions](https://docs.docker.com/engine/install/).
+
+Finally, make sure that your Google Cloud user has the `iam.allowedPolicyMemberDomains` permissions. 
 
 ### Some Environment Variables
 
