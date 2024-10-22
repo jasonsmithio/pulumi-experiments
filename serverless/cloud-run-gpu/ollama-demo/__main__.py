@@ -40,6 +40,10 @@ docker_image = docker_build.Image('openwebui',
     context=docker_build.BuildContextArgs(
         location="./",
     ),
+    platforms=[
+        docker_build.Platform.LINUX_AMD64,
+        docker_build.Platform.LINUX_ARM64,
+    ],
     push=True,
 )
 
