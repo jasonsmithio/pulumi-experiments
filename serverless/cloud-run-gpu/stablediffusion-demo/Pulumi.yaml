@@ -1,0 +1,6 @@
+name: ollama-demo
+runtime:
+  name: python
+  options:
+    virtualenv: env
+description: A Python program to deploy Cloud Run instances with GPUs attached
