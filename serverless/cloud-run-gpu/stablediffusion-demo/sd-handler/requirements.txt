@@ -1,0 +1,7 @@
+python-dotenv
+accelerate
+transformers
+diffusers
+numpy
+google-cloud-storage
+nvgpu

@@ -12,19 +12,11 @@ gcp_project = gconfig.require("project")
 gcp_region = gconfig.get("region", "us-central1")
 gcp_zone = gconfig.get("zone", "us-central1-a")
 
-# LLM Bucket
-llm_bucket = gcp.storage.Bucket("llm-bucket",
-    name=str(gcp_project)+"-llm-bucket",
-    location=gcp_region,
-    force_destroy=True,
-    uniform_bucket_level_access=True,
-    )
-
 # Artifact Registry Repo for Docker Images
 llm_repo = gcp.artifactregistry.Repository("llm-repo",
     location=gcp_region,
-    repository_id="openwebui",
-    description="Repo for Open WebUI usage",
+    repository_id="stablediffusion",
+    description="Repo for Stable Diffusion usage",
     format="DOCKER",
     docker_config={
         "immutable_tags": True,
@@ -32,10 +24,26 @@ llm_repo = gcp.artifactregistry.Repository("llm-repo",
 )
 
 # Docker image URL
+torchserve_image = str(gcp_region)+"-docker.pkg.dev/"+str(gcp_project)+"/stablediffusion/gpu-torchserve"
+
+# Docker image URL
 openwebui_image = str(gcp_region)+"-docker.pkg.dev/"+str(gcp_project)+"/openwebui/openwebui"
 
-# Build and Deploy Docker
-docker_image = docker_build.Image('openwebui',
+# Build and Deploy GPU TorchServe Docker
+openwebui_image = docker_build.Image('gputorchserve',
+    tags=[torchserve_image],                                  
+    context=docker_build.BuildContextArgs(
+        location="./sd-handler/",
+    ),
+    platforms=[
+        docker_build.Platform.LINUX_AMD64,
+        docker_build.Platform.LINUX_ARM64,
+    ],
+    push=True,
+)
+
+# Build and Deploy OpenWeb UI Docker
+openwebui_image = docker_build.Image('openwebui',
     tags=[openwebui_image],                                  
     context=docker_build.BuildContextArgs(
         location="./",
@@ -48,38 +56,34 @@ docker_image = docker_build.Image('openwebui',
 )
 
 # Ollama Cloud Run instance cloudrunv2 api
-ollama_cr_service = cloudrun.Service("ollama_cr_service",
-    name="ollama-service",
+sd_cr_service = cloudrun.Service("sd_cr_service",
+    name="stable-diffusion-service",
     location=gcp_region,
     deletion_protection= False,
     ingress="INGRESS_TRAFFIC_ALL",
     launch_stage="BETA",
     template={
         "containers":[{
-            "image": "ollama/ollama",
+            "image": torchserve_image,
             "resources": {
                 "cpuIdle": False,
                 "limits":{
                     "cpu": "8",
-                    "memory": "16Gi",
+                    "memory": "32Gi",
                     "nvidia.com/gpu": "1",
                 },
                 "startup_cpu_boost": True,
             },
             "ports": {
-                "container_port": 11434,
+                "container_port": 8080,
             },
-            "volume_mounts": [{
-                "name": "ollama-bucket",
-                "mount_path": "/root/.ollama/",
-            }],
             "startup_probe": {
                 "initial_delay_seconds": 0,
                 "timeout_seconds": 1,
                 "period_seconds": 1,
                 "failure_threshold": 1800,
                 "tcp_socket": {
-                    "port": 11434,
+                    "port": 8080,
                 },
             },
         }],
@@ -90,26 +94,20 @@ ollama_cr_service = cloudrun.Service("ollama_cr_service",
             "max_instance_count":4,
             "min_instance_count":1,
         },
-        "volumes":[{
-            "name": "ollama-bucket",
-            "gcs": {
-                "bucket": llm_bucket.name,
-                "read_only": False,
-            },
-        }],
     },
+    opts=pulumi.ResourceOptions(depends_on=[torchserve_image]),
 )
 
-ollama_binding = cloudrun.ServiceIamBinding("ollama-binding",
+torchserve_binding = cloudrun.ServiceIamBinding("torchserve-binding",
     project=gcp_project,
     location=gcp_region,
-    name=ollama_cr_service,
+    name=sd_cr_service,
     role="roles/run.invoker",
     members=["allUsers"],
-    opts=pulumi.ResourceOptions(depends_on=[ollama_cr_service]),
+    opts=pulumi.ResourceOptions(depends_on=[sd_cr_service]),
 )
 
-ollama_url = ollama_cr_service.uri
+torchserve_url = sd_cr_service.uri
 
 # Open WebUI Cloud Run instance
 openwebui_cr_service = cloudrun.Service("openwebui-service",
@@ -123,7 +121,7 @@ openwebui_cr_service = cloudrun.Service("openwebui-service",
             "image": "us-central1-docker.pkg.dev/"+str(gcp_project)+"/openwebui/openwebui",
             "envs": [{
                 "name":"OLLAMA_BASE_URL",
-                "value":ollama_url,
+                "value":torchserve_url,
             }
             ,{
                 "name":"WEBUI_AUTH",
@@ -156,7 +154,7 @@ openwebui_cr_service = cloudrun.Service("openwebui-service",
         "type": "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST",
         "percent": 100,
     }],
-    opts=pulumi.ResourceOptions(depends_on=[ollama_binding, docker_image]),
+    opts=pulumi.ResourceOptions(depends_on=[torchserve_binding, openwebui_image]),
 )
 
 openwebui_binding = cloudrun.ServiceIamBinding("openwebui-binding",
@@ -169,5 +167,5 @@ openwebui_binding = cloudrun.ServiceIamBinding("openwebui-binding",
 )
 
 
-pulumi.export("ollama_url", ollama_cr_service.uri)
+pulumi.export("torchserve_url", sd_cr_service.uri)
 pulumi.export("open_webui_url", openwebui_cr_service.uri)
