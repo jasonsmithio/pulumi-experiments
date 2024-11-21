@@ -30,7 +30,7 @@ torchserve_image = str(gcp_region)+"-docker.pkg.dev/"+str(gcp_project)+"/stabled
 openwebui_image = str(gcp_region)+"-docker.pkg.dev/"+str(gcp_project)+"/openwebui/openwebui"
 
 # Build and Deploy GPU TorchServe Docker
-openwebui_image = docker_build.Image('gputorchserve',
+torchserve_build = docker_build.Image('gputorchserve',
     tags=[torchserve_image],                                  
     context=docker_build.BuildContextArgs(
         location="./sd-handler/",
@@ -43,7 +43,7 @@ openwebui_image = docker_build.Image('gputorchserve',
 )
 
 # Build and Deploy OpenWeb UI Docker
-openwebui_image = docker_build.Image('openwebui',
+openwebui_build = docker_build.Image('openwebui',
     tags=[openwebui_image],                                  
     context=docker_build.BuildContextArgs(
         location="./",
@@ -95,7 +95,7 @@ sd_cr_service = cloudrun.Service("sd_cr_service",
             "min_instance_count":1,
         },
     },
-    opts=pulumi.ResourceOptions(depends_on=[torchserve_image]),
+    opts=pulumi.ResourceOptions(depends_on=[torchserve_build]),
 )
 
 torchserve_binding = cloudrun.ServiceIamBinding("torchserve-binding",
@@ -154,7 +154,7 @@ openwebui_cr_service = cloudrun.Service("openwebui-service",
         "type": "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST",
         "percent": 100,
     }],
-    opts=pulumi.ResourceOptions(depends_on=[torchserve_binding, openwebui_image]),
+    opts=pulumi.ResourceOptions(depends_on=[torchserve_binding, openwebui_build]),
 )
 
 openwebui_binding = cloudrun.ServiceIamBinding("openwebui-binding",
