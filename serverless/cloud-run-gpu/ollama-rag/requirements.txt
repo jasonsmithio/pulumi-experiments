@@ -7,4 +7,9 @@ pulumi-random==4.16.6
 langchain>=0.3.4,<1.0.0
 langchain-community>=0.3.3,<1.0.0
 langchain-google-community==2.0.1
-streamlit==1.39.0
+langserve>=0.3.0,<0.5.0
+streamlit>=1.41.0,<2.0.0
+fastapi>=0.115.6,<1.0.0
+uvicorn>=0.32.0
+
+

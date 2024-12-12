@@ -31,14 +31,28 @@ llm_repo = gcp.artifactregistry.Repository("llm-repo",
     }
 )
 
-# Docker image URL
-openwebui_image = str(gcp_region)+"-docker.pkg.dev/"+str(gcp_project)+"/openwebui/openwebui"
+# Docker image URLs
+streamlit_image = str(gcp_region)+"-docker.pkg.dev/"+str(gcp_project)+"/ollama-demo/streamlit"
+openwebui_image = str(gcp_region)+"-docker.pkg.dev/"+str(gcp_project)+"/ollama-demo/openwebui"
 
-# Build and Deploy Docker
-docker_image = docker_build.Image('openwebui',
+
+# Build and Deploy Docker Images
+streamlit_build = docker_build.Image('streamlit',
+    tags=[streamlit_image],                                  
+    context=docker_build.BuildContextArgs(
+        location="./apps/streamlit",
+    ),
+    platforms=[
+        docker_build.Platform.LINUX_AMD64,
+        docker_build.Platform.LINUX_ARM64,
+    ],
+    push=True,
+)
+
+openwebui_build = docker_build.Image('openwebui',
     tags=[openwebui_image],                                  
     context=docker_build.BuildContextArgs(
-        location="./",
+        location="./apps/openwebui",
     ),
     platforms=[
         docker_build.Platform.LINUX_AMD64,
@@ -111,16 +125,16 @@ ollama_binding = cloudrun.ServiceIamBinding("ollama-binding",
 
 ollama_url = ollama_cr_service.uri
 
-# Open WebUI Cloud Run instance
-openwebui_cr_service = cloudrun.Service("openwebui-service",
-    name="openwebui-service",
+# Langserve Cloud Run instance
+streamlit_cr_service = cloudrun.Service("streamlit-service",
+    name="streamlit-service",
     location=gcp_region,
     deletion_protection= False,
     ingress="INGRESS_TRAFFIC_ALL",
     launch_stage="BETA",
     template={
         "containers":[{
-            "image": "us-central1-docker.pkg.dev/"+str(gcp_project)+"/openwebui/openwebui",
+            "image": streamlit_image,
             "envs": [{
                 "name":"OLLAMA_BASE_URL",
                 "value":ollama_url,
@@ -156,7 +170,67 @@ openwebui_cr_service = cloudrun.Service("openwebui-service",
         "type": "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST",
         "percent": 100,
     }],
-    opts=pulumi.ResourceOptions(depends_on=[ollama_binding, docker_image]),
+    opts=pulumi.ResourceOptions(depends_on=[ollama_binding, streamlit_build]),
+)
+
+streamlit_binding = cloudrun.ServiceIamBinding("streanlit-binding",
+    project=gcp_project,
+    location=gcp_region,
+    name=streamlit_cr_service,
+    role="roles/run.invoker",
+    members=["allUsers"],
+    opts=pulumi.ResourceOptions(depends_on=[streamlit_cr_service]),
+)
+
+#streamlit_url = ollama_cr_service.uri
+
+
+# Open WebUI Cloud Run instance
+openwebui_cr_service = cloudrun.Service("openwebui-service",
+    name="openwebui-service",
+    location=gcp_region,
+    deletion_protection= False,
+    ingress="INGRESS_TRAFFIC_ALL",
+    launch_stage="BETA",
+    template={
+        "containers":[{
+            "image": openwebui_image,
+            "envs": [{
+                "name":"OLLAMA_BASE_URL",
+                "value":ollama_url,
+            }
+            ,{
+                "name":"WEBUI_AUTH",
+                "value":'false',  
+            }],
+            "resources": {
+                "cpuIdle": False,
+                "limits":{
+                    "cpu": "8",
+                    "memory": "16Gi",
+                },
+                "startup_cpu_boost": True,
+            },
+            "startup_probe": {
+                "initial_delay_seconds": 0,
+                "timeout_seconds": 1,
+                "period_seconds": 1,
+                "failure_threshold": 1800,
+                "tcp_socket": {
+                    "port": 8080,
+                },
+            },
+        }],
+        "scaling": {      
+            "max_instance_count":4,
+            "min_instance_count":1,
+        },
+    },
+    traffics=[{
+        "type": "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST",
+        "percent": 100,
+    }],
+    opts=pulumi.ResourceOptions(depends_on=[ollama_binding, openwebui_build]),
 )
 
 openwebui_binding = cloudrun.ServiceIamBinding("openwebui-binding",
@@ -170,4 +244,5 @@ openwebui_binding = cloudrun.ServiceIamBinding("openwebui-binding",
 
 
 pulumi.export("ollama_url", ollama_cr_service.uri)
+pulumi.export("streamlit_url", streamlit_cr_service.uri)
 pulumi.export("open_webui_url", openwebui_cr_service.uri)
