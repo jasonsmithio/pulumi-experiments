@@ -42,13 +42,25 @@ llm_repo = gcp.artifactregistry.Repository("llm-repo",
 # Docker image URLs
 streamlit_image = str(gcp_region)+"-docker.pkg.dev/"+str(gcp_project)+"/ollama-demo/streamlit"
 openwebui_image = str(gcp_region)+"-docker.pkg.dev/"+str(gcp_project)+"/ollama-demo/openwebui"
-
+indexer_image = str(gcp_region)+"-docker.pkg.dev/"+str(gcp_project)+"/ollama-demo/indexer"
 
 # Build and Deploy Docker Images
 streamlit_build = docker_build.Image('streamlit',
     tags=[streamlit_image],                                  
     context=docker_build.BuildContextArgs(
         location="./apps/streamlit",
+    ),
+    platforms=[
+        docker_build.Platform.LINUX_AMD64,
+        docker_build.Platform.LINUX_ARM64,
+    ],
+    push=True,
+)
+
+indexer_build = docker_build.Image('indexer',
+    tags=[indexer_image],                                  
+    context=docker_build.BuildContextArgs(
+        location="./apps/indexer",
     ),
     platforms=[
         docker_build.Platform.LINUX_AMD64,
@@ -187,7 +199,7 @@ streamlit_binding = cloudrun.ServiceIamBinding("streanlit-binding",
 )
 
 # Indexer Cloud Run instance
-indexer_cr_service = cloudrun.Service("indexer-service",
+indexer_cr_job = cloudrun.Job("indexer-service",
     name="indexer-service",
     location=gcp_region,
     deletion_protection= False,
@@ -195,12 +207,12 @@ indexer_cr_service = cloudrun.Service("indexer-service",
     launch_stage="BETA",
     template={
         "containers":[{
-            "image": streamlit_image,
+            "image": indexer_image,
             "resources": {
                 "cpuIdle": False,
                 "limits":{
-                    "cpu": "8",
-                    "memory": "16Gi",
+                    "cpu": "2",
+                    "memory": "4Gi",
                 },
                 "startup_cpu_boost": True,
             },
@@ -219,8 +231,8 @@ indexer_cr_service = cloudrun.Service("indexer-service",
             },
         }],
         "scaling": {      
-            "max_instance_count":4,
-            "min_instance_count":1,
+            "max_instance_count":3,
+            "min_instance_count":0,
         },
         "volumes":[{
             "name": "pdf-bucket",
@@ -230,20 +242,16 @@ indexer_cr_service = cloudrun.Service("indexer-service",
             },
         }],
     },
-    traffics=[{
-        "type": "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST",
-        "percent": 100,
-    }],
     opts=pulumi.ResourceOptions(depends_on=[ollama_binding, streamlit_build]),
 )
 
 indexer_binding = cloudrun.ServiceIamBinding("indexer-binding",
     project=gcp_project,
     location=gcp_region,
-    name=indexer_cr_service,
+    name=indexer_cr_job,
     role="roles/run.invoker",
     members=["allUsers"],
-    opts=pulumi.ResourceOptions(depends_on=[indexer_cr_service]),
+    opts=pulumi.ResourceOptions(depends_on=[indexer_cr_job]),
 )
 
 
