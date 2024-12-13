@@ -1,3 +1,4 @@
+import os
 import pulumi
 from pulumi import Output, Config
 import pulumi_gcp as gcp
@@ -19,6 +20,29 @@ pdf_bucket = gcp.storage.Bucket("pdf-bucket",
     force_destroy=True,
     uniform_bucket_level_access=True,
     )
+
+# Get PDF Names
+pdf_objects= []
+
+def list_pdfs(directory):
+    pdf_files = []
+    for filename in os.listdir(directory):
+        if filename.endswith(".pdf"):
+            pdf_files.append(filename)
+    return pdf_files
+
+pdf_path = "./pdfs/"
+pdfs = list_pdfs(pdf_path)
+
+# Upload PDFs
+for file in pdfs:
+    bucket_object = gcp.storage.BucketObject(
+        file.replace(".pdf", ""),  # Using file name as resource name
+        bucket=pdf_bucket.name,
+        source=pulumi.FileAsset(file)
+    )
+    pdf_objects.append(bucket_object)
+
 
 # LLM Bucket
 llm_bucket = gcp.storage.Bucket("llm-bucket",
@@ -218,7 +242,7 @@ indexer_cr_job = cloudrun.Job("indexer-service",
             },
             "volume_mounts": [{
                 "name": "pdf-bucket",
-                "mount_path": "/root/.pdfs/",
+                "mount_path": "/root/.training/",
             }],
             "startup_probe": {
                 "initial_delay_seconds": 0,

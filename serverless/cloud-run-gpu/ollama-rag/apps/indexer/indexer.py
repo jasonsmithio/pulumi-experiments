@@ -19,10 +19,11 @@ def list_pdfs(directory):
             pdf_files.append(filename)
     return pdf_files
 
-pdf_path = "/root/.pdfs"
+pdf_path = "/root/.training/pdfs"
 pdfs = list_pdfs(pdf_path)
 
 for pdf in pdfs:
+    pdf = pymupdf.open(pdf)
     for page in pdf:
         text = page.get_text()
         pdf_text.append(text)
