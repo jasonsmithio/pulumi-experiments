@@ -12,6 +12,14 @@ gcp_project = gconfig.require("project")
 gcp_region = gconfig.get("region", "us-central1")
 gcp_zone = gconfig.get("zone", "us-central1-a")
 
+# PDF Bucket
+pdf_bucket = gcp.storage.Bucket("pdf-bucket",
+    name=str(gcp_project)+"-pdf-bucket",
+    location=gcp_region,
+    force_destroy=True,
+    uniform_bucket_level_access=True,
+    )
+
 # LLM Bucket
 llm_bucket = gcp.storage.Bucket("llm-bucket",
     name=str(gcp_project)+"-llm-bucket",
@@ -125,7 +133,7 @@ ollama_binding = cloudrun.ServiceIamBinding("ollama-binding",
 
 ollama_url = ollama_cr_service.uri
 
-# Langserve Cloud Run instance
+# Streamlit Cloud Run instance
 streamlit_cr_service = cloudrun.Service("streamlit-service",
     name="streamlit-service",
     location=gcp_region,
@@ -138,10 +146,6 @@ streamlit_cr_service = cloudrun.Service("streamlit-service",
             "envs": [{
                 "name":"OLLAMA_BASE_URL",
                 "value":ollama_url,
-            }
-            ,{
-                "name":"WEBUI_AUTH",
-                "value":'false',  
             }],
             "resources": {
                 "cpuIdle": False,
@@ -182,7 +186,65 @@ streamlit_binding = cloudrun.ServiceIamBinding("streanlit-binding",
     opts=pulumi.ResourceOptions(depends_on=[streamlit_cr_service]),
 )
 
-#streamlit_url = ollama_cr_service.uri
+# Indexer Cloud Run instance
+indexer_cr_service = cloudrun.Service("indexer-service",
+    name="indexer-service",
+    location=gcp_region,
+    deletion_protection= False,
+    ingress="INGRESS_TRAFFIC_ALL",
+    launch_stage="BETA",
+    template={
+        "containers":[{
+            "image": streamlit_image,
+            "resources": {
+                "cpuIdle": False,
+                "limits":{
+                    "cpu": "8",
+                    "memory": "16Gi",
+                },
+                "startup_cpu_boost": True,
+            },
+            "volume_mounts": [{
+                "name": "pdf-bucket",
+                "mount_path": "/root/.pdfs/",
+            }],
+            "startup_probe": {
+                "initial_delay_seconds": 0,
+                "timeout_seconds": 1,
+                "period_seconds": 1,
+                "failure_threshold": 1800,
+                "tcp_socket": {
+                    "port": 8080,
+                },
+            },
+        }],
+        "scaling": {      
+            "max_instance_count":4,
+            "min_instance_count":1,
+        },
+        "volumes":[{
+            "name": "pdf-bucket",
+            "gcs": {
+                "bucket": pdf_bucket.name,
+                "read_only": False,
+            },
+        }],
+    },
+    traffics=[{
+        "type": "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST",
+        "percent": 100,
+    }],
+    opts=pulumi.ResourceOptions(depends_on=[ollama_binding, streamlit_build]),
+)
+
+indexer_binding = cloudrun.ServiceIamBinding("indexer-binding",
+    project=gcp_project,
+    location=gcp_region,
+    name=indexer_cr_service,
+    role="roles/run.invoker",
+    members=["allUsers"],
+    opts=pulumi.ResourceOptions(depends_on=[indexer_cr_service]),
+)
 
 
 # Open WebUI Cloud Run instance
