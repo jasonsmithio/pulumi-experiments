@@ -5,13 +5,25 @@ import pulumi_gcp as gcp
 import pulumi_docker as docker
 import pulumi_docker_build as docker_build
 from pulumi_gcp import cloudrunv2 as cloudrun
+import pulumi_random as random
 
 
 # Get some provider-namespaced configuration values such as project
+
 gconfig = pulumi.Config("gcp")
 gcp_project = gconfig.require("project")
 gcp_region = gconfig.get("region", "us-central1")
 gcp_zone = gconfig.get("zone", "us-central1-a")
+#gcp_network = gconfig.get("network", "default")
+
+pconfig = pulumi.Config()
+gcp_network = pconfig.get("network", "default")
+
+# Create AlloyDB Password for Later
+rag_alloydb_password = random.RandomPassword("password",
+    length=24,
+    special=True,
+    override_special="!#$%&*()-_=+[]{}<>:?")
 
 # PDF Bucket
 pdf_bucket = gcp.storage.Bucket("pdf-bucket",
@@ -34,7 +46,7 @@ def list_pdfs(directory):
 pdf_path = "./pdfs/"
 pdfs = list_pdfs(pdf_path)
 
-# Upload PDFs
+# Upload PDFs to PDF Bucket
 for file in pdfs:
     bucket_object = gcp.storage.BucketObject(
         file.replace(".pdf", ""),  # Using file name as resource name
@@ -52,10 +64,38 @@ llm_bucket = gcp.storage.Bucket("llm-bucket",
     uniform_bucket_level_access=True,
     )
 
+# AlloyDB Setup for RAG
+
+# Create AlloyDB Cluster
+
+rag_alloydb_cluster = gcp.alloydb.Cluster("rag_alloydb_cluster",
+    cluster_id="alloydb-cluster",
+    location="us-central1",
+    network_config={
+        "network": gcp_network,
+    })
+
+rag_alloydb_instance = gcp.alloydb.Instance("default",
+    cluster=rag_alloydb_cluster.name,
+    instance_id="alloydb-instance",
+    instance_type="PRIMARY",
+    machine_config={
+        "cpu_count": 2,
+    },
+    opts = pulumi.ResourceOptions(depends_on=[rag_alloydb_cluster]))
+
+rag_alloydb_user = gcp.alloydb.User("rag_alloydb_user",
+    cluster=rag_alloydb_cluster.name,
+    user_id="user1",
+    user_type="ALLOYDB_BUILT_IN",
+    password=rag_alloydb_password.result,
+    database_roles=["alloydbsuperuser"],
+    opts = pulumi.ResourceOptions(depends_on=[rag_alloydb_instance]))
+
 # Artifact Registry Repo for Docker Images
 llm_repo = gcp.artifactregistry.Repository("llm-repo",
     location=gcp_region,
-    repository_id="openwebui",
+    repository_id="ollama-demo",
     description="Repo for Open WebUI usage",
     format="DOCKER",
     docker_config={
@@ -72,7 +112,7 @@ indexer_image = str(gcp_region)+"-docker.pkg.dev/"+str(gcp_project)+"/ollama-dem
 streamlit_build = docker_build.Image('streamlit',
     tags=[streamlit_image],                                  
     context=docker_build.BuildContextArgs(
-        location="./apps/streamlit",
+        location="apps/streamlit",
     ),
     platforms=[
         docker_build.Platform.LINUX_AMD64,
@@ -84,7 +124,7 @@ streamlit_build = docker_build.Image('streamlit',
 indexer_build = docker_build.Image('indexer',
     tags=[indexer_image],                                  
     context=docker_build.BuildContextArgs(
-        location="./apps/indexer",
+        location="./apps/indexer/",
     ),
     platforms=[
         docker_build.Platform.LINUX_AMD64,
@@ -96,7 +136,7 @@ indexer_build = docker_build.Image('indexer',
 openwebui_build = docker_build.Image('openwebui',
     tags=[openwebui_image],                                  
     context=docker_build.BuildContextArgs(
-        location="./apps/openwebui",
+        location="apps/openwebui",
     ),
     platforms=[
         docker_build.Platform.LINUX_AMD64,
@@ -227,11 +267,23 @@ indexer_cr_job = cloudrun.Job("indexer-service",
     name="indexer-service",
     location=gcp_region,
     deletion_protection= False,
-    ingress="INGRESS_TRAFFIC_ALL",
     launch_stage="BETA",
     template={
         "containers":[{
             "image": indexer_image,
+            "envs": [{
+                "name":"RAG_DB_INSTANCE_NAME",
+                "value":"rag_alloydb_instance",
+            },{
+                "name":"RAG_DB_USER",
+                "value":"rag_alloydb_user",  
+            },{
+                "name":"RAG_DB_PASS",
+                "value": rag_alloydb_password.result,
+            },{
+                "name":"RAG_DB_NAME",
+                "value":"RAG_DB",
+            }],
             "resources": {
                 "cpuIdle": False,
                 "limits":{

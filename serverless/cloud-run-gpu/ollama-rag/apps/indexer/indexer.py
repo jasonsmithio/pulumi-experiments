@@ -55,7 +55,7 @@ store = PGVector(
     pre_delete_collection=True  
 )
 
-# Save all release notes into the Cloud SQL database
+# Save all PDF into the AlloyDB database
 texts = list(pdf_text)
 ids = store.add_texts(texts)
 
