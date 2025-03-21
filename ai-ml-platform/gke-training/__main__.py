@@ -1,7 +1,7 @@
 import pulumi
 import pulumi_gcp as gcp
 import pulumi_kubernetes as kubernetes
-from k8s.mixtral import Mixtral as mixtral
+from k8s.tensorflow import Tensorflow as tensorflow
 
 # Get some provider-namespaced configuration values
 gconfig = pulumi.Config("gcp")
@@ -19,6 +19,13 @@ gke_master_node_count = pconfig.get_int("nodesPerZone", 1)
 gke_nodepool_name = pconfig.get("nodepoolName", "ml-training-nodepool")
 gke_nodepool_node_count = pconfig.get_int("nodesPerZone", 2)
 gke_ml_machine_type = pconfig.get("mlMachines", "g2-standard-24")
+
+gke_bucket = gcp.storage.Bucket("gke-gpu-bucket",
+    name=str(gcp_project)+"-gke-gpu-bucket",
+    location=gcp_region,
+    force_destroy=True,
+    uniform_bucket_level_access=True,
+    )
 
 # Create a cluster in the new network and subnet
 gke_cluster = gcp.container.Cluster("cluster-1", 
@@ -125,42 +132,44 @@ users:
 kubeconfig = kubernetes.Provider('gke_k8s', kubeconfig=k8s_config, opts=pulumi.ResourceOptions(depends_on=[gke_nodepool]))
 
 # Create a GCP service account for the nodepool
-#gke_nodepool_sa = gcp.serviceaccount.Account(
-#    "gke-nodepool-sa",
-#    account_id=pulumi.Output.concat(gke_cluster.name, "-np-1-sa"),
-#    display_name="Nodepool 1 Service Account",
-#
-#    depends_on=[gke_cluster]
-#)
+gke_nodepool_sa = gcp.serviceaccount.Account(
+    "gke-nodepool-sa",
+    account_id=pulumi.Output.concat(gke_cluster.name, "-np-1-sa"),
+    display_name="Nodepool 1 Service Account",
+
+    depends_on=[gke_nodepool]
+)
+
+# Create a Namespace in Kubernetes Cluster
+gke_namespace = kubernetes.core.v1.Namespace("gke-ai-namespace",
+    metadata=kubernetes.meta.v1.ObjectMetaArgs(
+        name="gke-ai-namespace",
+    )
+)
+
+gke_gpu_binding = gcp.projects.IAMBinding("gke_gpu_binding",
+    project=gcp_project,
+    role="roles/editor",
+    members=["serviceAccount:"+str(gcp_project)+".svc.id.goog[gke-ai-namespace/gpu-k8s-sa]"])
 
 # Create a ServiceAccount in a Kubernetes cluster for default namespace
-hf_service_account = kubernetes.core.v1.ServiceAccount("k8s-sa",
+gpu_service_account = kubernetes.core.v1.ServiceAccount("gpu-k8s-sa",
     metadata=kubernetes.meta.v1.ObjectMetaArgs(
         namespace="default",
-        name="hf-sa"
+        name="gpu-k8s-sa"
     ),
+    annotations= {
+        "iam.gke.io/gcp-service-account":"serviceAccount:"+str(gcp_project)+".svc.id.goog[gke-ai-namespace/gpu-k8s-sa]"},
     automount_service_account_token=True,
     opts=pulumi.ResourceOptions(provider=kubeconfig)
 )
 
+tensorflow_test = tensorflow.test_tensorflow_pod(gke_bucket, gke_nodepool_sa, kubeconfig)
+tensorflow_mnist = tensorflow.tensorflow_mnist(gke_bucket, gke_nodepool_sa, kubeconfig)
 
-deploy = mixtral(kubeconfig)
 
-# Get GCP Secret with Hugging Face Key
-hf_secret = gcp.secretmanager.get_secret(secret_id="hf-secret-key")
-
-# IAM Bindings
-ray_sa_binding = gcp.secretmanager.SecretIamBinding("binding",
-    #project=hf_secret["project"],
-    secret_id=hf_secret.id,
-    #secret_id="hf-secret-key",
-    role="roles/secretmanager.secretAccessor",
-    members=["principal://iam.googleapis.com/projects/"+str(gcp_project)+"/locations/global/workloadIdentityPools/"+str(gcp_project)+".svc.id.goog/subject/ns/default/sa/"+str(hf_service_account.metadata['name'])])
-
-#pulumi.export("service_account_name", ray_service_account.metadata["name"])
-
-service = deploy.mixtralService()
-deployment = deploy.mixtral8x7b()
+#service = deploy.mixtralService()
+#deployment = deploy.mixtral8x7b()
 
 # Export the Service's IP address
 service_ip = service.status.apply(
