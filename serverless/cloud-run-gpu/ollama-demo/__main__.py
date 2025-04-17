@@ -56,7 +56,7 @@ ollama_cr_service = cloudrun.Service("ollama_cr_service",
     launch_stage="BETA",
     template={
         "containers":[{
-            "image": "ollama/ollama",
+            "image": "ollama/ollama:latest",
             "resources": {
                 "cpuIdle": False,
                 "limits":{
