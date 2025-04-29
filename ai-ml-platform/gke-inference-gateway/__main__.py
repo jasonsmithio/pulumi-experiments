@@ -131,12 +131,13 @@ hf_service_account = kubernetes.core.v1.ServiceAccount("k8s-sa",
     opts=pulumi.ResourceOptions(provider=kubeconfig)
 )
 
+gke_inference = kubernetes.yaml.ConfigGroup(
+    "gke-inference",
+    files=["https://raw.githubusercontent.com/GoogleCloudPlatform/gke-gateway-api/refs/heads/main/config/crd/networking.gke.io_gcptrafficextensions.yaml", "https://raw.githubusercontent.com/GoogleCloudPlatform/gke-gateway-api/refs/heads/main/config/crd/networking.gke.io_gcptrafficextensions.yaml"],
+    opts=pulumi.ResourceOptions(provider=kubeconfig)
+)
 
-<<<<<<< HEAD
-=======
 
-
->>>>>>> 2af773b (Wordpress demo)
 deploy = mixtral(kubeconfig)
 
 # Get GCP Secret with Hugging Face Key
