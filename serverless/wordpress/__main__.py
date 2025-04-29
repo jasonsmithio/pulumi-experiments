@@ -1,9 +1,10 @@
 import pulumi
 import pulumi_gcp
 from pulumi import Output, Config
-from pulumi_gcp.cloudrun import (
+from pulumi_gcp.cloudrunv2 import (
     ServiceTemplateMetadataArgs,
     ServiceTemplateSpecContainerEnvArgs,
+    ServiceIamBinding,
 )
 
 config = Config()
@@ -37,15 +38,7 @@ sql_instance_url = Output.concat(
     cloud_sql_instance.connection_name,
 )
 
-env_vars = [
-ServiceTemplateSpecContainerEnvArgs(name="WORDPRESS_DB_HOST", value=cloud_sql_instance.name),
-ServiceTemplateSpecContainerEnvArgs(name="WORDPRESS_DB_USER", value="wordpress"),
-ServiceTemplateSpecContainerEnvArgs(name="WORDPRESS_DB_PASSWORD", value=config.require_secret("db-password")),
-ServiceTemplateSpecContainerEnvArgs(name="WORDPRESS_DB_NAME", value=cloud_sql_instance.connection_name),
-ServiceTemplateSpecContainerEnvArgs(name="WORDPRESS_TABLE_PREFIX",value="wp"),
-]
-
-cloud_run = pulumi_gcp.cloudrun.Service(
+wordpress_cr_service = pulumi_gcp.cloudrun.Service(
     "wordpress",
     location=Config("gcp").require("region"),
     template=pulumi_gcp.cloudrun.ServiceTemplateArgs(
@@ -58,7 +51,18 @@ cloud_run = pulumi_gcp.cloudrun.Service(
             containers=[
                 pulumi_gcp.cloudrun.ServiceTemplateSpecContainerArgs(
                     image="wordpress",
-                    envs=env_vars,
+                    envs=[
+                        {"name":"WORDPRESS_DB_HOST", "value":"cloud_sql_instance.connection_name"},
+                        {"name":"WORDPRESS_DB_USER" , "value":config.require("db-name")},
+                        {"name":"WORDPRESS_DB_PASSWORD", "value":config.require_secret("db-password")},
+                        {"name":"WORDPRESS_DB_NAME" , "value":cloud_sql_instance.name},
+                        {"name":"WORDPRESS_TABLE_PREFIX" , "value":"wp"},
+                    ],
+                    ports=[
+                    pulumi_gcp.cloudrun.ServiceTemplateSpecContainerPortArgs(
+                        container_port=80,
+                        ),
+                    ],
                 )
             ],
         ),
@@ -71,5 +75,14 @@ cloud_run = pulumi_gcp.cloudrun.Service(
     ],
 )
 
+wordpress_binding = ServiceIamBinding("openwebui-binding",
+    project=config.require("project")
+    location=config.get("region")
+    name=wordpress_cr_service,
+    role="roles/run.invoker",
+    members=["allUsers"],
+    opts=pulumi.ResourceOptions(depends_on=[wordpress_cr_service]),
+)
+
 pulumi.export("cloud_sql_instance_name", cloud_sql_instance.name)
-pulumi.export("cloud_run_url", cloud_run.statuses[0].url)
+pulumi.export("cloud_run_url", wordpress_cr_service.statuses[0].url)
