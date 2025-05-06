@@ -1,5 +1,6 @@
 import pulumi
 import pulumi_gcp
+import secrets
 from pulumi import Output, Config
 from pulumi_gcp.cloudrunv2 import (
     ServiceIamBinding,
@@ -18,6 +19,28 @@ wordpress_bucket = pulumi_gcp.storage.Bucket("wordpress-bucket",
     uniform_bucket_level_access=True,
     )
 
+# Create DB Password
+wp_db_secret = pulumi_gcp.secretmanager.Secret("wp-mysql-secret",
+    secret_id="wp-mysql-secret",
+    replication={
+        "user_managed": {
+            "replicas": [
+                {
+                    "location": gcp_region,
+                },
+                {
+                    "location": "us-east1",
+                },
+            ],
+        },
+    })
+
+# Add a secret version with the secret payload
+wp_db_secret_version = pulumi_gcp.secretmanager.SecretVersion("my-secret-version",
+    secret=wp_db_secret.id,
+    secret_data=secrets.token_urlsafe(15))  
+
+# Setup Cloud SQL with MySQL isntance, database, and user
 cloud_sql_instance = pulumi_gcp.sql.DatabaseInstance("wordpress-db",
     name="wordpress-db",
     database_version="MYSQL_8_0",
@@ -33,7 +56,7 @@ users = pulumi_gcp.sql.User("wp-user",
     name="wp-user",
     host="%",
     instance=cloud_sql_instance.name,
-    password=config.require_secret("db-password"),
+    password=wp_db_secret_version.version,
 )
 
 # Create Service Account
@@ -116,7 +139,7 @@ wordpress_cr_service = pulumi_gcp.cloudrunv2.Service("wordpress",
                 },
                 {
                     "name": "WORDPRESS_DB_PASSWORD",
-                    "value": config.require_secret("db-password"),
+                    "value": wp_db_secret_version.version,
                 },
                 {
                     "name": "WORDPRESS_DB_NAME",
