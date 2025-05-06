@@ -88,10 +88,16 @@ Notice that some of these variables were set earlier
 
 You will see that I have a `__main__.py` file in the main directory. This program will tell Pulumi todo a few things. 
 
-- Import the relevant Python libraries ( lines 1-6 )
-- Setup all the environment variables for later use ( lines 8-11 )
-- It will create a bucket in Google Cloud Storage to store our WordPress assets. ( lines 13-19 )
-- 
+- Import the relevant Python libraries ( lines 1-7 )
+- Setup all the environment variables for later use ( lines 9-12 )
+- It will create a bucket in Google Cloud Storage to store our WordPress assets. ( lines 14-20 )
+- We will create a database password and store it as a secret in [Google Cloud Secret Manager](https://cloud.google.com/security/products/secret-manager) ( lines 22 - 41 )
+- Create a CloudSQL instance, database and user ( lines 43-60 )
+- Create a Google Cloud service account to be used by the Cloud Run instance to access Cloud SQL and Cloud Storage. ( lines 63-73 )
+- Bind those storage accounts with the proper roles ( lines 75-95 )
+- Create the Cloud Run service with the Wordpress container while giving it relevant environment variables and setting up the SQL Connection and mounting the storage bucket ( lines 103-167 )
+- In order to make the site publicly accessible, we will give `allUsers` the `run.invoker` role ( lines 170-177 )
+- Output the SQL instance name and Cloud Run URL ( lines 179-180 )
 
 This is all Python code. We aren't using a bespoke Domain Specific Language (DSL) such as Hashicorp's HCL. Since this is just Python, it is really easy to add to your workflow. 
 
@@ -102,12 +108,19 @@ We will execute now let Pulumi take our Python program and deploy.
 ```bash
 pulumi up
 ```
-It will run a test first to make sure that everything looks good. After that test runs, it will ask you if you want to execute so choose `yes` and deploy. This can take a few minutes to launch but I want you to take notice of how long it takes the `ollama_cr_service` to run.
+It will run a test first to make sure that everything looks good. After that test runs, it will ask you if you want to execute so choose `yes` and deploy. This can take a 10-15 minutes to complete (most of it is building the database) but I want you to take notice of how long it takes the `wordpress_cr_service` to run.
 
-![pulumi-services](./images/pulumi-wordpress-1.png)
+![pulumi-wordpress](./images/pulumi-wordpress-1.png)
 
+Note the `Outputs`. You should see `cloud_run_url`. Copy that as we will need it for the next step. 
 
-![pulumi-services](./images/wordpress-login-1.png)
+## Log Into The Site
+
+We will now go to our web browser and navigate to the `cloud_run_url` that we collected earlier.
+
+![wordpress-login](./images/wordpress-login-1.png)
+
+We will setup WordPress. It's pretty straightforward, setup a language, username, password, etc. Once complete, navigate back to the URL and you should see your site. If you add `/wp-login.php` to the end of the URL, you can use your username and password to sign into the WordPress CMS and configure the site. 
 
 
 ## Clean Up
