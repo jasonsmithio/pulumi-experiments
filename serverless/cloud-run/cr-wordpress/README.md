@@ -102,15 +102,15 @@ In the same vein, we are using a `db-f1-micro` machine type for the MySQL databa
 You will see that I have a `__main__.py` file in the main directory. This program will tell Pulumi todo a few things. 
 
 - Import the relevant Python libraries ( lines 1-7 )
-- Setup all the environment variables for later use ( lines 9-12 )
-- It will create a bucket in Google Cloud Storage to store our WordPress assets. ( lines 14-20 )
-- We will create a database password and store it as a secret in [Google Cloud Secret Manager](https://cloud.google.com/security/products/secret-manager) ( lines 22 - 41 )
-- Create a CloudSQL instance, database and user ( lines 43-60 )
-- Create a Google Cloud service account to be used by the Cloud Run instance to access Cloud SQL and Cloud Storage. ( lines 63-73 )
-- Bind those storage accounts with the proper roles ( lines 75-95 )
-- Create the Cloud Run service with the Wordpress container while giving it relevant environment variables and setting up the SQL Connection and mounting the storage bucket ( lines 103-167 )
-- In order to make the site publicly accessible, we will give `allUsers` the `run.invoker` role ( lines 170-177 )
-- Output the SQL instance name and Cloud Run URL ( lines 179-180 )
+- Setup all the environment variables for later use ( lines 9-14 )
+- It will create a bucket in Google Cloud Storage to store our WordPress assets. ( lines 16-22 )
+- We will create a database password and store it as a secret in [Google Cloud Secret Manager](https://cloud.google.com/security/products/secret-manager) ( lines 24 - 44 )
+- Create a CloudSQL instance, database and user ( lines 46-63 )
+- Create a Google Cloud service account to be used by the Cloud Run instance to access Cloud SQL and Cloud Storage. ( lines 65-70 )
+- Bind those storage accounts with the proper roles ( lines 72-92 )
+- Create the Cloud Run service with the [Wordpress container](https://hub.docker.com/_/wordpress) while giving it relevant environment variables and setting up the SQL Connection and mounting the storage bucket ( lines 94-159 )
+- In order to make the site publicly accessible, we will give `allUsers` the `run.invoker` role ( lines 161-169 )
+- Output the SQL instance name and Cloud Run URL ( lines 171-1172 )
 
 This is all Python code. We aren't using a bespoke Domain Specific Language (DSL) such as Hashicorp's HCL. Since this is just Python, it is really easy to add to your workflow. 
 

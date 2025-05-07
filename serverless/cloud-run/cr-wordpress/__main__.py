@@ -40,7 +40,8 @@ wp_db_secret = pulumi_gcp.secretmanager.Secret("wp-mysql-secret",
 # Add a secret version with the secret payload
 wp_db_secret_version = pulumi_gcp.secretmanager.SecretVersion("my-secret-version",
     secret=wp_db_secret.id,
-    secret_data=secrets.token_urlsafe(15))  
+    secret_data=secrets.token_urlsafe(15)
+    )  
 
 # Setup Cloud SQL with MySQL isntance, database, and user
 cloud_sql_instance = pulumi_gcp.sql.DatabaseInstance("wordpress-db",
@@ -156,7 +157,6 @@ wordpress_cr_service = pulumi_gcp.cloudrunv2.Service("wordpress",
     }],
     opts = pulumi.ResourceOptions(depends_on=[cr_iam_binding]),
 )
-
 
 wordpress_binding = ServiceIamBinding("wordpress-binding",
     project=gcp_project,
