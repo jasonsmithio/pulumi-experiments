@@ -10,6 +10,8 @@ config = pulumi.Config()
 
 gcp_project = Config("gcp").require("project")
 gcp_region = Config("gcp").get("region")
+cr_max_instances=config.get("cr-max", 2)
+db_tier=config.get("db-tier", "db-f1-micro")
 
 # LLM Bucket
 wordpress_bucket = pulumi_gcp.storage.Bucket("wordpress-bucket",
@@ -45,7 +47,7 @@ cloud_sql_instance = pulumi_gcp.sql.DatabaseInstance("wordpress-db",
     name="wordpress-db",
     database_version="MYSQL_8_0",
     deletion_protection=False,
-    settings=pulumi_gcp.sql.DatabaseInstanceSettingsArgs(tier="db-f1-micro"),
+    settings=pulumi_gcp.sql.DatabaseInstanceSettingsArgs(tier=db_tier),
 )
 
 database = pulumi_gcp.sql.Database(
@@ -59,45 +61,33 @@ users = pulumi_gcp.sql.User("wp-user",
     password=wp_db_secret_version.version,
 )
 
-# Create Service Account
+# Create Service Account for Cloud Run
 wp_service_account = pulumi_gcp.serviceaccount.Account("my-service-account",
     account_id="wp-service-account",
     display_name="Wordpress Service Account",
     description="This is a service account created using Pulumi for our Wordpress installation on Cloud Run",
 )
 
-# Output variable for service account binding
-service_account_member = Output.concat(
-    "serviceAccount:",
-    wp_service_account.email,
-)
-
 # Bind the new Service Account to 3 roles
 storage_iam_binding = pulumi_gcp.projects.IAMMember("storage-wp-service-account-binding",
     project=gcp_project,
     role="roles/storage.admin",
-    member=service_account_member,
+    member=wp_service_account.email.apply(lambda email: f"serviceAccount:{email}"),
     opts=pulumi.ResourceOptions(depends_on=[wp_service_account]),
 )
 
 cloudsql_iam_binding = pulumi_gcp.projects.IAMMember("cloudsql-wp-service-account-binding",
     project=gcp_project,
     role="roles/cloudsql.client",
-    member=service_account_member,
+    member=wp_service_account.email.apply(lambda email: f"serviceAccount:{email}"),
     opts=pulumi.ResourceOptions(depends_on=[wp_service_account]),
 )
 
 cr_iam_binding = pulumi_gcp.projects.IAMMember("cr-wp-service-account-binding",
     project=gcp_project,
     role="roles/run.invoker", 
-    member=service_account_member,
+    member=wp_service_account.email.apply(lambda email: f"serviceAccount:{email}"),
     opts=pulumi.ResourceOptions(depends_on=[wp_service_account]),
-)
-
-
-sql_instance_url = Output.concat(
-    ":/cloudsql/",
-    cloud_sql_instance.connection_name,
 )
 
 # Create a Cloud Run Service
@@ -109,7 +99,7 @@ wordpress_cr_service = pulumi_gcp.cloudrunv2.Service("wordpress",
     template={
         "service_account": wp_service_account.email,
         "scaling": {
-            "max_instance_count": 2,
+            "max_instance_count": cr_max_instances,
         },
         "volumes": [{
             "name": "cloudsql",
@@ -131,7 +121,8 @@ wordpress_cr_service = pulumi_gcp.cloudrunv2.Service("wordpress",
             "envs": [
                 {
                     "name": "WORDPRESS_DB_HOST",
-                    "value": sql_instance_url,
+                    "value": cloud_sql_instance.connection_name.apply(lambda connection_name: f":/cloudsql/{connection_name}"),
+                    #"value": sql_instance_url,
                 },
                 {
                     "name": "WORDPRESS_DB_USER",

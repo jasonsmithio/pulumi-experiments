@@ -89,10 +89,13 @@ pulumi stack init
 pulumi config set gcp:project $PROJECT_ID
 pulumi config set gcp:region $REGION
 pulumi config set db-name wordpress-db # You can change this if you really want to
+pulumi config set cr-max 2 #You can set this to whatever number, minimum 1, default 2 if not set
+pulumi config set db-tier db-f1-micro #You can set this to whatever number, default is db-f1-micro
 ```
 
-Notice that some of these variables were set earlier
+Notice that some of these variables were set earlier. For the sake of the demo, we are only using 5 instances of Cloud Run. You could set it to 1 or you could set it way higher. Cloud Run, by design, will spin up as many instances as necessary to address the requests coming in. Setting a max creates a cap to help setup guardrails on spending and usage. 
 
+In the same vein, we are using a `db-f1-micro` machine type for the MySQL database on Cloud SQL. The reason is because we want to reduce costs for this demo but if you needed/wanted a larger machine type, you can certainly choose. Type and pricing can be found [here](https://cloud.google.com/sql/pricing)
 
 ## Pulumi and Python
 
