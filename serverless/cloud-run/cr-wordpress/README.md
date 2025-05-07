@@ -4,6 +4,16 @@ This code will show you how to install a fresh [WordPress](https://wordpress.org
 
 This will all be deployed utilizing [Pulumi](https://pulumi.com) as an IaC and [Python](https://python.org) language. 
 
+## What is Cloud Run 
+[Cloud Run](https://cloud.run "Cloud Run") is a container based platform that is entirely serverless. It is based on the [Knative Serving](https://knative.dev/docs/serving/ "Knative Serving") API and handles the scaling and deployment of your application without having to think about cluster, ingresses, etc. 
+
+
+## What is WordPress?
+[Wordpress](https://wordpress.org "Wordpress") is an open source Content Management System (CMS) written in PHP. It is said to run [40% of the internet](https://wordpress.org/40-percent-of-web/).
+
+## What is Pulumi? 
+[Pulumi](https://pulumi.com) is an open source Infrastructure-as-Code (IaC) tool that allows developers to use natural programming languages to declare and deploy cloud resource be it a public or private cloud.
+
 ## Preparing the Deploy
 
 First we will need to set some environment variables
@@ -112,7 +122,7 @@ It will run a test first to make sure that everything looks good. After that tes
 
 ![pulumi-wordpress](./images/pulumi-wordpress-1.png)
 
-Note the `Outputs`. You should see `cloud_run_url`. Copy that as we will need it for the next step. 
+*Note* the `Outputs`. You should see `cloud_run_url`. Copy that as we will need it for the next step. 
 
 ## Log Into The Site
 
