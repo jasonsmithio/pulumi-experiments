@@ -10,10 +10,9 @@ config = pulumi.Config()
 
 gcp_project = Config("gcp").require("project")
 gcp_region = Config("gcp").get("region")
-cr_max_instances=config.get("cr-max", 2)
+cr_max_instances=config.get("cr-max", 5)
 db_tier=config.get("db-tier", "db-f1-micro")
-#use_gclb=config.get("use_gclb", True)
-use_gclb=True
+use_gclb=config.get_bool("use_gclb", True)
 
 # LLM Bucket
 wordpress_bucket = pulumi_gcp.storage.Bucket("wordpress-bucket",
@@ -252,7 +251,7 @@ if use_gclb is True:
 elif use_gclb is False:
     pass
 else:
-    pulumi.export("message", "use_gclb was not set properly, defaulting to False")
+    pulumi.export("Load Balancer Message", "use_gclb was not set properly, defaulting to False")
     pass
 
 

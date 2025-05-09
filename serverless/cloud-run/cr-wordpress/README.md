@@ -135,6 +135,13 @@ We will now go to our web browser and navigate to the `cloud_run_url` that we co
 
 We will setup WordPress. It's pretty straightforward, setup a language, username, password, etc. Once complete, navigate back to the URL and you should see your site. If you add `/wp-login.php` to the end of the URL, you can use your username and password to sign into the WordPress CMS and configure the site. 
 
+## (Optional) Add a Load Balancer with nip.io wildcard DNS
+
+Right now, traffic is coming to your 
+
+```bash
+pulumi config set --type bool use_gclb true
+```
 
 ## Clean Up
 

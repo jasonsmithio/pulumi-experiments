@@ -1,9 +1,9 @@
-name: gcp-py-cloudrun-cloudsql
+name: gcp-py-wordpress-cloudrun
 runtime:
   name: python
   options:
     virtualenv: venv
-description: Basic example of a Google Cloud Run and Google Cloud SQL deployment
+description: Basic example using WordPress on Cloud Run with Cloud SQL, GCLB, and Cloud Storage
 template:
   config:
     gcp:project:
@@ -12,6 +12,3 @@ template:
       description: The Google Cloud zone
     db-name:
       description: Name and Username of Cloud SQL database
-    db-password:
-      description: Password used in Cloud SQL database
-      secret: true
