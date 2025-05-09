@@ -102,15 +102,15 @@ In the same vein, we are using a `db-f1-micro` machine type for the MySQL databa
 You will see that I have a `__main__.py` file in the main directory. This program will tell Pulumi todo a few things. 
 
 - Import the relevant Python libraries ( lines 1-7 )
-- Setup all the environment variables for later use ( lines 9-14 )
-- It will create a bucket in Google Cloud Storage to store our WordPress assets. ( lines 16-22 )
-- We will create a database password and store it as a secret in [Google Cloud Secret Manager](https://cloud.google.com/security/products/secret-manager) ( lines 24 - 44 )
-- Create a CloudSQL instance, database and user ( lines 46-63 )
-- Create a Google Cloud service account to be used by the Cloud Run instance to access Cloud SQL and Cloud Storage. ( lines 65-70 )
-- Bind those storage accounts with the proper roles ( lines 72-92 )
-- Create the Cloud Run service with the [Wordpress container](https://hub.docker.com/_/wordpress) while giving it relevant environment variables and setting up the SQL Connection and mounting the storage bucket ( lines 94-159 )
-- In order to make the site publicly accessible, we will give `allUsers` the `run.invoker` role ( lines 161-169 )
-- Output the SQL instance name and Cloud Run URL ( lines 171-1172 )
+- Setup all the environment variables for later use ( lines 9-15 )
+- It will create a bucket in Google Cloud Storage to store our WordPress assets. ( lines 17-23 )
+- We will create a database password and store it as a secret in [Google Cloud Secret Manager](https://cloud.google.com/security/products/secret-manager) ( lines 25 - 45 )
+- Create a CloudSQL instance, database and user ( lines 47-64 )
+- Create a Google Cloud service account to be used by the Cloud Run instance to access Cloud SQL and Cloud Storage. ( lines 66-71 )
+- Bind those storage accounts with the proper roles ( lines 73-93 )
+- Create the Cloud Run service with the [Wordpress container](https://hub.docker.com/_/wordpress) while giving it relevant environment variables and setting up the SQL Connection and mounting the storage bucket ( lines 95-159 )
+- In order to make the site publicly accessible, we will give `allUsers` the `run.invoker` role ( lines 161-168 )
+- Output the SQL instance name and Cloud Run URL ( lines 258-260 )
 
 This is all Python code. We aren't using a bespoke Domain Specific Language (DSL) such as Hashicorp's HCL. Since this is just Python, it is really easy to add to your workflow. 
 
@@ -137,11 +137,34 @@ We will setup WordPress. It's pretty straightforward, setup a language, username
 
 ## (Optional) Add a Load Balancer with nip.io wildcard DNS
 
-Right now, traffic is coming to your 
+Right now, traffic is coming to your `.run.app` URL that Cloud Run automatically creates when you create a Cloud Run service. For demos, this may be fine, but in real life, you would want to use a load balancer with a CDN. Luckily, Google Cloud offers such a product. The [Google Cloud Load Balancer](https://cloud.google.com/load-balancing) is a globally available load balancer that can handle 1M= queries per second. It also has a [CDN](https://cloud.google.com/cdn) functionality that you can use. If you want to set that up, I have added some code. Simple set the Pulumi configuration key of `use_gcl` to true as seen below.
 
 ```bash
 pulumi config set --type bool use_gclb true
 ```
+
+**NOTE** By default, the value is set to *False* and any other value will be seen as invalid and it will remain as *False*.
+
+Once set, you can `pulumi up` like normal.
+
+### Let's look at the Load Balancing code. 
+
+- Simple conditional to see if `use_gclb` is `True` ( line 173)
+        - If set to False or any other value, it will simply `pass` ( lines 252 -256 )
+- Create and reserve an external [IP Address](https://cloud.google.com/vpc/docs/ip-addresses) ( lines 175-181 )
+- Create a [Serverless Network Endpoint Group (NEG)](https://cloud.google.com/load-balancing/docs/negs/serverless-neg-concepts) ( lines 183-191 )
+- Create a [Backend Service](https://cloud.google.com/load-balancing/docs/backend-service) ( lines 193-201 )
+- Create a [URL Map](https://cloud.google.com/load-balancing/docs/url-map) ( lines 203-207 )
+- Create an [SSL Certificate](https://cloud.google.com/load-balancing/docs/ssl-certificates/google-managed-certs) ( lines 209-216 )
+- Create [Target Proxies](https://cloud.google.com/load-balancing/docs/target-proxies) for both HTTP and HTTPS traffic ( lines 218-228 )
+- Create [Global Forwarding Rules](https://cloud.google.com/load-balancing/docs/forwarding-rule-concepts) for both HTTP and HTTPS traffic ( lines 230-247 )
+- Export the FQDN for Wordpress ( line 250 )
+
+You will notice that for the domain name, we are using [nip.io](https://nip.io/ "nip.io"). It is a wildcard DNS service that is really easy to use. You just setup <random string>.xx.xx.xx.xx.nip.io OR <random string>-xx-xx-xx-xx.nip.io where the xx are meant to replace the IP address that we created. The nip.io service will route traffic from that domain name to the IP address. 
+
+The reason we do this is that when Google generates a certificate, it needs a valid domain name. This is a neat workaround that helps us out. 
+
+On that note, even after the `pulumi up` successfully completes, you may need to wait an addition 10+ minutes for the certificate to provision. You can run `gcloud compute ssl-certificates list wp-cr-certificate` in your terminal to check the provisioning status. Once complete, you can now hit that URL and browse.
 
 ## Clean Up
 
@@ -152,6 +175,3 @@ pulumi destroy
 ```
 
 choose `yes` to destroy and in about 5 - 10 minutes, everything will be removed. 
-
-## TODO 
-GCLB with Cloud CDN support
