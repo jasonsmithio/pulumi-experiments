@@ -1,4 +1,4 @@
-# Run Cloud Run on Wordpress (WIP)
+# Run Cloud Run on Wordpress
 
 This code will show you how to install a fresh [WordPress](https://wordpress.org "WordPress") installation on [Cloud Run](https://cloud.run "Cloud Run"). The WordPress application will live on Cloud Run while the data will be stored in a MySQL 8.0 database on [Google Cloud SQL](https://cloud.google.com/sql "Cloud SQL"). We will also store assets such as uploaded images in a [Cloud Storage](https://cloud.google.com/storage "Cloud Storage") bucket.
 
@@ -175,3 +175,8 @@ pulumi destroy
 ```
 
 choose `yes` to destroy and in about 5 - 10 minutes, everything will be removed. 
+
+
+### TODO
+
+Add custom domains
