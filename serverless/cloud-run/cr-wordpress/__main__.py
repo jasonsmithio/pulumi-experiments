@@ -12,6 +12,8 @@ gcp_project = Config("gcp").require("project")
 gcp_region = Config("gcp").get("region")
 cr_max_instances=config.get("cr-max", 2)
 db_tier=config.get("db-tier", "db-f1-micro")
+#use_gclb=config.get("use_gclb", True)
+use_gclb=True
 
 # LLM Bucket
 wordpress_bucket = pulumi_gcp.storage.Bucket("wordpress-bucket",
@@ -123,7 +125,6 @@ wordpress_cr_service = pulumi_gcp.cloudrunv2.Service("wordpress",
                 {
                     "name": "WORDPRESS_DB_HOST",
                     "value": cloud_sql_instance.connection_name.apply(lambda connection_name: f":/cloudsql/{connection_name}"),
-                    #"value": sql_instance_url,
                 },
                 {
                     "name": "WORDPRESS_DB_USER",
@@ -167,5 +168,94 @@ wordpress_binding = ServiceIamBinding("wordpress-binding",
     opts=pulumi.ResourceOptions(depends_on=[wordpress_cr_service]),
 )
 
+# Setup GCLB If User requested it
+
+if use_gclb is True:
+
+    # Create a Global IP Address
+    wp_ip_address = pulumi_gcp.compute.GlobalAddress("wp_ip_address", 
+        name="wp-ip-address",
+        address_type="EXTERNAL",
+        ip_version="IPV4",
+        description="Global IP Address for Wordpress on Cloud Run",
+    )
+
+    # Create a Serverles NEG
+    wp_cr_neg = pulumi_gcp.compute.RegionNetworkEndpointGroup("wp_cr_neg",
+        name="wp-cr-neg",
+        region=gcp_region,
+        network_endpoint_type="SERVERLESS",
+        cloud_run=pulumi_gcp.compute.RegionNetworkEndpointGroupCloudRunArgs(
+            service=wordpress_cr_service.name,
+        ),
+    )
+
+    #Create a Backend Service
+    wp_backend_service = pulumi_gcp.compute.BackendService("wp-backend-service",
+        name="wp-backend-service",
+        enable_cdn=True,
+        protocol="HTTPS",
+        backends=[pulumi_gcp.compute.BackendServiceBackendArgs(
+            group=wp_cr_neg.id,
+        )],
+    )   
+    
+    # Create URL Paths 
+    cr_url_paths = pulumi_gcp.compute.URLMap("cr-url-paths",
+        name="cr-url-paths",
+        default_service=wp_backend_service.id,
+    )  
+
+    # Create SSL Certificate
+    wp_cr_cert = pulumi_gcp.compute.ManagedSslCertificate("wp_cr_certificate",
+        name="wp-cr-certificate",
+        managed=pulumi_gcp.compute.ManagedSslCertificateManagedArgs(
+            domains=[wp_ip_address.address.apply(lambda address: f"wordpress-{address.replace(".","-")}.nip.io")]
+            ),
+        opts=pulumi.ResourceOptions(depends_on=[wp_ip_address]),
+    ) 
+    
+    # Create HTTP and HTTPS proxies
+    cr_http_proxy = pulumi_gcp.compute.TargetHttpProxy("cr-http-proxy",
+        name="cr-http-proxy",
+        url_map=cr_url_paths.id,
+    )
+
+    cr_https_proxy = pulumi_gcp.compute.TargetHttpsProxy("cr-https-proxy",
+        name="cr-https-proxy",
+        url_map=cr_url_paths.id,
+        ssl_certificates=[wp_cr_cert.id],
+    )
+
+    # Create HTTP and HTTPS Global Forwarding Rules
+    wp_http_forwarding_rule = pulumi_gcp.compute.GlobalForwardingRule("wp-http-forwarding-rule",
+        name="wp-http-forwarding-rule",
+        target=cr_http_proxy.self_link,
+        port_range="80",
+        ip_protocol="TCP",
+        ip_address=wp_ip_address.address,
+        opts=pulumi.ResourceOptions(depends_on=[wp_ip_address]),
+    )
+
+    wp_https_forwarding_rule = pulumi_gcp.compute.GlobalForwardingRule("wp-https-forwarding-rule",
+        name="wp-https-forwarding-rule",
+        ip_address=wp_ip_address.address,
+        target=cr_https_proxy.self_link,
+        port_range="443",
+        load_balancing_scheme="EXTERNAL",        
+        opts=pulumi.ResourceOptions(depends_on=[wp_ip_address]),
+    )
+
+    # Exporting Full nip.io URL
+    pulumi.export("WordPress URL", wp_ip_address.address.apply(lambda address: f"wordpress-{address.replace(".","-")}.nip.io"))
+
+elif use_gclb is False:
+    pass
+else:
+    pulumi.export("message", "use_gclb was not set properly, defaulting to False")
+    pass
+
+
+#Export Values
 pulumi.export("cloud_sql_instance_name", cloud_sql_instance.name)
 pulumi.export("cloud_run_url", wordpress_cr_service.uri)

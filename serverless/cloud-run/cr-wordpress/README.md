@@ -145,3 +145,6 @@ pulumi destroy
 ```
 
 choose `yes` to destroy and in about 5 - 10 minutes, everything will be removed. 
+
+## TODO 
+GCLB with Cloud CDN support
