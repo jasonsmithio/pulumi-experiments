@@ -5,6 +5,7 @@ import pulumi_docker as docker
 import pulumi_docker_build as docker_build
 from pulumi_gcp import cloudrunv2 as cloudrun
 
+
 # Get some provider-namespaced configuration values such as project
 gconfig = pulumi.Config("gcp")
 gcp_project = gconfig.require("project")
@@ -46,8 +47,8 @@ docker_image = docker_build.Image('openwebui',
     push=True,
 )
 
-# Ollama Cloud Run instance cloudrunv2 api
-ollama_cr_service = cloudrun.Service("ollama_cr_service",
+# Litellm Cloud Run instance cloudrunv2 api
+litellm_cr_service = cloudrun.Service("litellm_cr_service",
     name="ollama-service",
     location=gcp_region,
     deletion_protection= False,
@@ -55,7 +56,15 @@ ollama_cr_service = cloudrun.Service("ollama_cr_service",
     launch_stage="BETA",
     template={
         "containers":[{
-            "image": "ollama/ollama:latest",
+            "image": "ghcr.io/berriai/litellm:main-latest",
+            "envs": [{
+                "name":"LITELLM_MASTER_KEY",
+                "value":ollama_url,
+            }
+            ,{
+                "name":"GEMINI_API_KEY",
+                "value":'false',  
+            }],
             "resources": {
                 "cpuIdle": False,
                 "limits":{
@@ -85,7 +94,6 @@ ollama_cr_service = cloudrun.Service("ollama_cr_service",
         "node_selector": {
             "accelerator": "nvidia-l4", 
         },
-        "gpu_zonal_redundancy_disabled": True,
         "scaling": {      
             "max_instance_count":4,
             "min_instance_count":1,

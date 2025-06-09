@@ -133,11 +133,11 @@ Notice how we are using some of the variables we set earlier.
 You will see that I have a `__main__.py` file in the main directory. This program will tell Pulumi todo a few things. 
 
 - Import the relevant Python libraries ( lines 1-6 )
-- Setup all the environment variables for later use ( lines 8-12 )
-- It will create a bucket in Google Cloud Storage to store our LLMs. This will prevent the service from having to download the LLMs every time you start the Cloud Run service. ( lines 14-20 )
-- Create a repo in [Google Artifact Registry](https://cloud.google.com/artifact-registry/docs) for our Docker container. ( Lines 23-31 )
-- Build an Open WebUI container and push it to Artifact Registry ( lines 33-47 )
-- Create a Cloud Run service running Ollama with 1 [NVIDIA L4](https://cloud.google.com/blog/products/compute/introducing-g2-vms-with-nvidia-l4-gpus) GPU attached and change the [IAM](https://cloud.google.com/security/products/iam) settings to make the URL publicly accessible.( lines 49-112 )
+- Setup all the environment variables for later use ( lines 9-13 )
+- It will create a bucket in Google Cloud Storage to store our LLMs. This will prevent the service from having to download the LLMs every time you start the Cloud Run service. ( lines 15-21 )
+- Create a repo in [Google Artifact Registry](https://cloud.google.com/artifact-registry/docs) for our Docker container. ( Lines 23-32 )
+- Build an Open WebUI container and push it to Artifact Registry ( lines 34-48 )
+- Create a Cloud Run service running Ollama with 1 [NVIDIA L4](https://cloud.google.com/blog/products/compute/introducing-g2-vms-with-nvidia-l4-gpus) GPU attached and change the [IAM](https://cloud.google.com/security/products/iam) settings to make the URL publicly accessible.( lines 50-112 )
 - Create a Cloud Run service running Open WebUI  change the [IAM](https://cloud.google.com/security/products/iam) settings to make the URL publicly accessible.( lines 114-169 )
 - Outputs for the URLs of both Cloud Run servers ( line 172 & 173 )
 
