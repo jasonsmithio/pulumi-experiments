@@ -92,6 +92,20 @@ cr_iam_binding = pulumi_gcp.projects.IAMMember("cr-wp-service-account-binding",
     opts=pulumi.ResourceOptions(depends_on=[wp_service_account]),
 )
 
+logging_iam_binding = pulumi_gcp.projects.IAMMember("cr-wp-service-account-binding",
+    project=gcp_project,
+    role="roles/stackdriver.resourceMetadata.writer", 
+    member=wp_service_account.email.apply(lambda email: f"serviceAccount:{email}"),
+    opts=pulumi.ResourceOptions(depends_on=[wp_service_account]),
+)
+
+monitoring_iam_binding = pulumi_gcp.projects.IAMMember("cr-wp-service-account-binding",
+    project=gcp_project,
+    role="roles/monitoring.metricWriter ", 
+    member=wp_service_account.email.apply(lambda email: f"serviceAccount:{email}"),
+    opts=pulumi.ResourceOptions(depends_on=[wp_service_account]),
+)
+
 # Create a Cloud Run Service
 wordpress_cr_service = pulumi_gcp.cloudrunv2.Service("wordpress",
     name="wordpress",
@@ -147,7 +161,7 @@ wordpress_cr_service = pulumi_gcp.cloudrunv2.Service("wordpress",
                 "mount_path": "/cloudsql",
                 }, {
                 "name": "wordpress-bucket",
-                "mount_path": "/var/www/html/wp-content/uploads",
+                "mount_path": "/var/www/html/wp-content",
             }],
         }],
     },

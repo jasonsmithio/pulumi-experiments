@@ -107,10 +107,10 @@ You will see that I have a `__main__.py` file in the main directory. This progra
 - We will create a database password and store it as a secret in [Google Cloud Secret Manager](https://cloud.google.com/security/products/secret-manager) ( lines 25 - 45 )
 - Create a CloudSQL instance, database and user ( lines 47-64 )
 - Create a Google Cloud service account to be used by the Cloud Run instance to access Cloud SQL and Cloud Storage. ( lines 66-71 )
-- Bind those storage accounts with the proper roles ( lines 73-93 )
-- Create the Cloud Run service with the [Wordpress container](https://hub.docker.com/_/wordpress) while giving it relevant environment variables and setting up the SQL Connection and mounting the storage bucket ( lines 95-159 )
-- In order to make the site publicly accessible, we will give `allUsers` the `run.invoker` role ( lines 161-168 )
-- Output the SQL instance name and Cloud Run URL ( lines 258-260 )
+- Bind those storage accounts with the proper roles for SQL, Storage, and Logging ( lines 73-107 )
+- Create the Cloud Run service with the [Wordpress container](https://hub.docker.com/_/wordpress) while giving it relevant environment variables and setting up the SQL Connection and mounting the storage bucket ( lines 107-173 )
+- In order to make the site publicly accessible, we will give `allUsers` the `run.invoker` role ( lines 175-182 )
+- Output the SQL instance name and Cloud Run URL ( lines 272-274 )
 
 This is all Python code. We aren't using a bespoke Domain Specific Language (DSL) such as Hashicorp's HCL. Since this is just Python, it is really easy to add to your workflow. 
 
@@ -149,16 +149,16 @@ Once set, you can `pulumi up` like normal.
 
 ### Let's look at the Load Balancing code. 
 
-- Simple conditional to see if `use_gclb` is `True` ( line 173)
-        - If set to False or any other value, it will simply `pass` ( lines 252 -256 )
-- Create and reserve an external [IP Address](https://cloud.google.com/vpc/docs/ip-addresses) ( lines 175-181 )
+- Simple conditional to see if `use_gclb` is `True` ( line 186 )
+        - If set to False or any other value, it will simply `pass` ( lines 188-194 )
+- Create and reserve an external [IP Address](https://cloud.google.com/vpc/docs/ip-addresses) ( lines 196-204 )
 - Create a [Serverless Network Endpoint Group (NEG)](https://cloud.google.com/load-balancing/docs/negs/serverless-neg-concepts) ( lines 183-191 )
-- Create a [Backend Service](https://cloud.google.com/load-balancing/docs/backend-service) ( lines 193-201 )
-- Create a [URL Map](https://cloud.google.com/load-balancing/docs/url-map) ( lines 203-207 )
-- Create an [SSL Certificate](https://cloud.google.com/load-balancing/docs/ssl-certificates/google-managed-certs) ( lines 209-216 )
-- Create [Target Proxies](https://cloud.google.com/load-balancing/docs/target-proxies) for both HTTP and HTTPS traffic ( lines 218-228 )
-- Create [Global Forwarding Rules](https://cloud.google.com/load-balancing/docs/forwarding-rule-concepts) for both HTTP and HTTPS traffic ( lines 230-247 )
-- Export the FQDN for Wordpress ( line 250 )
+- Create a [Backend Service](https://cloud.google.com/load-balancing/docs/backend-service) ( lines 206-214 )
+- Create a [URL Map](https://cloud.google.com/load-balancing/docs/url-map) ( lines 216-220 )
+- Create an [SSL Certificate](https://cloud.google.com/load-balancing/docs/ssl-certificates/google-managed-certs) ( lines 222-229 )
+- Create [Target Proxies](https://cloud.google.com/load-balancing/docs/target-proxies) for both HTTP and HTTPS traffic ( lines 231-241 )
+- Create [Global Forwarding Rules](https://cloud.google.com/load-balancing/docs/forwarding-rule-concepts) for both HTTP and HTTPS traffic ( lines 243-260 )
+- Export the FQDN for Wordpress ( line 263 )
 
 You will notice that for the domain name, we are using [nip.io](https://nip.io/ "nip.io"). It is a wildcard DNS service that is really easy to use. You just setup <random string>.xx.xx.xx.xx.nip.io OR <random string>-xx-xx-xx-xx.nip.io where the xx are meant to replace the IP address that we created. The nip.io service will route traffic from that domain name to the IP address. 
 
