@@ -1,4 +1,4 @@
-name: project
+name: gke-arm
 runtime:
   name: python
   options:

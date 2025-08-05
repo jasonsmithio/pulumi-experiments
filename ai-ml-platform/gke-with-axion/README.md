@@ -1,17 +1,24 @@
-# AI on GKE using Pulumi Demo
+# Using Pulumi to Inference with Gemma hosted on GKE with Google Axion Processors
 
-This is a very basic tutorial on how to get started with GCP on Cloud. This is based on another tutorial I made with regards to [AI on GKE](https://github.com/jasonsmithio/ai-on-gke/tree/main/mixtral-on-gke).
+With this tutorial you will use Pulumi to stand up a [GKE](https://cloud.google.com/kubernetes-engine "GKE") cluster with [Axion ARM processors](https://cloud.google.com/products/axion "Axion ARM processors). We will then deploy [Gemma 3](https://ai.google.dev/gemma/docs/core "Gemma 3") using [vLLM](https://docs.vllm.ai/en/latest/ "vLLM") on GKE. 
 
-This example will demostrate how to serve [Mixtral 8X7B](https://mistral.ai/news/mixtral-of-experts/ "Mixtral 8X7B") model on [NVIDIA L4 GPUs](https://cloud.google.com/compute/docs/gpus#l4-gpus "NVIDIA L4 GPUs") running on Google Cloud Kubernetes Engine (GKE). It will help you understand the AI/ML ready features of GKE and how to use them to serve large language models.
+We will then deploy a [Streamlit](https://streamlit.io/ "Streamlit") application to [Cloud Run](https://cloud.google.com/run "Cloud Run") and inference with the Gemma via vLLM. 
 
-## What is Mistral?
 
-Mixtral 8X7B is the latest LLM provided by [Mistral.ai](https://mistral.ai "Mistral.ai"). You can learn more about it [here](https://mistral.ai/news/mixtral-of-experts/). To interface with the model, we will be using [Hugging Face](https://huggingface.co/mistralai/Mixtral-8x7B-v0.1) and it's [text generation inference](https://huggingface.co/docs/text-generation-inference/en/index).
+## What is Axion?
+[C4D Machines](https://cloud.google.com/blog/products/compute/c4d-vms-unparalleled-performance-for-business-workloads "C4D Machines")
+
+## What is Streamlit
+
+## Gemma and vLLM
 
 ## Before we get started... 
 Make sure you have access to a Google Cloud project that supports NVIDIA L4s in your desired region per your quotas. This tutorial uses `us-central1` but you can use a different one if you choose to do so. Also make sure that you have acceess to a terminal that can execute `kubectl`.
 
 ## Some Pre-requesites 
+
+### Setting Up Hugging Face
+Part of what we need to do is create an account on [Hugging Face](https://huggingface.co/ "Hugging Face").
 
 ### Some Environment Variables
 
@@ -21,8 +28,9 @@ Before we get started, we will set a few basic environment variables in our term
 export PROJECT_ID=<your-project-id>
 export REGION=<your region>
 export ZONE=${REGION}-a 
-export CLUSTER_NAME=mixtral-cluster
+export CLUSTER_NAME=axion-cluster
 export NETWORK=<your network>
+export HF_TOKEN=<Your Hugging Face Token>
 ```
 
 ### Configuring the Google Cloud Platform (GCP) environment
@@ -49,7 +57,7 @@ gcloud services enable \
     secretmanager.googleapis.com
 ```
 
-We will create a secret for our Hugging Face Key
+We will create a secret in [Secret Manager](https://cloud.google.com/security/products/secret-manager "Secret Manager") for our Hugging Face token.
 
 ```bash
 echo -n "<MY HUGGING FACE KEY>" | gcloud secrets create hf-secret-key \
@@ -67,6 +75,8 @@ gcloud projects add-iam-policy-binding $PROJECT_ID \
 --member=serviceAccount:${GCE_SA} --role=roles/monitoring.metricWriter
 gcloud projects add-iam-policy-binding $PROJECT_ID \
 --member=serviceAccount:${GCE_SA} --role=roles/stackdriver.resourceMetadata.writer
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+--member=serviceAccount:${GCE_SA} --role=roles/compute.storageAdmin
 ```
 This CAN be configured in Pulumi but for the purposes of this demo, we will set it in terminal. 
 
@@ -100,10 +110,10 @@ pulumi config set gcp:zone $ZONE
 pulumi config set projectNumber $PROJECT_NUMBER
 pulumi config set gceSA $GCE_SA  
 pulumi config set gkeNetwork $NETWORK
-pulumi config set clusterName mixtral-gke-cluster
-pulumi config set master_version 1.27
+pulumi config set clusterName axion-cluster
+pulumi config set master_version 1.31
 pulumi config set node_count 5
-pulumi config set node_machine_type n2d-standard-4
+pulumi config set node_machine_type c4a-standard-32
 ```
 
 Notice how we are using some of the variables we set earlier.
@@ -244,3 +254,6 @@ pulumi destroy
 ```
 
 choose `Y` to destroy and in about 15-30 minutes, everything will be removed. 
+
+## FUTURE TODOS
+- Pulumi ESC

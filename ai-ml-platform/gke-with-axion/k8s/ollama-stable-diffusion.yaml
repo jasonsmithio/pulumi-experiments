@@ -1,0 +1,103 @@
+# Kubernetes Manifest for deploying Ollama on Google Kubernetes Engine (GKE)
+# This configuration creates a StatefulSet to ensure a stable network identity and persistent storage for models.
+# A Service is also created to expose the Ollama API endpoint.
+#
+# GKE GPU Support Note:
+# To use GPUs, you must have a GKE node pool with GPUs attached.
+# This manifest includes a nodeSelector and tolerations to ensure the pod is scheduled on a GPU-enabled node.
+# You may need to adjust the `cloud.google.com/gke-accelerator` value to match your specific GPU type (e.g., nvidia-tesla-t4, nvidia-a100, etc.).
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ollama
+  namespace: default
+spec:
+  serviceName: "ollama-service"
+  replicas: 1 # Running a single instance of Ollama
+  selector:
+    matchLabels:
+      app: ollama
+  template:
+    metadata:
+      labels:
+        app: ollama
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/arch
+                operator: In
+                values:
+                - arm64
+      nodeSelector:
+        cloud.google.com/gke-nodepool: "axion-nodepool"
+      containers:
+        - name: ollama
+          image: ollama/ollama@sha256:67642615c0fe816cdedefda19c3a82f85bc99bf54c82af2d0f63df2842d4fb48
+          ports:
+            - containerPort: 11434
+              name: api
+          volumeMounts:
+            - name: ollama-models-pvc
+              mountPath: /root/.ollama
+          resources:
+            requests:
+              memory: "8Gi" # Requesting enough memory for large models
+              cpu: "2"
+            limits:
+              memory: "16Gi" # Setting a higher memory limit
+              cpu: "4"
+# The StatefulSet manages the PersistentVolumeClaim automatically.
+# This template creates a PVC to store the downloaded models persistently.
+  volumeClaimTemplates:
+    - metadata:
+        name: ollama-models-pvc
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        storageClassName: "hyperdisk-arm"
+        resources:
+          requests:
+            storage: 30Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama-service # Provides a stable endpoint for the Ollama API
+  namespace: default
+spec:
+  selector:
+    app: ollama
+  ports:
+    - protocol: TCP
+      port: 11434
+      targetPort: 11434
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: axion-sd-gateway
+spec:
+  gatewayClassName: gke-l7-global-external-managed  # Use this for external access
+  listeners:
+  - protocol: HTTP
+    port: 11434
+    name: http
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: axion-sd-route
+spec:
+  parentRefs:
+  - name: axion-sd-gateway  # Reference your Gateway
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: ollama-service  # Replace with your Service name
+      port: 11434       

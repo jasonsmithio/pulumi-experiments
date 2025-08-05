@@ -1,0 +1,39 @@
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: ollama-sdxl-deployment
+    spec:
+      replicas: 1
+      selector:
+        matchLabels:
+          app: ollama
+      template:
+        metadata:
+          labels:
+            app: ollama
+        spec:
+          containers:
+          - name: ollama
+            image: ollama/ollama@sha256:67642615c0fe816cdedefda19c3a82f85bc99bf54c82af2d0f63df2842d4fb48
+            ports:
+            - containerPort: 11434 # Default Ollama port
+            resources: 
+              requests:
+                cpu: "1"
+                memory: "1Gi"
+              limits:
+                cpu: "2"
+                memory: "2Gi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama-service
+spec:
+  selector:
+    app: ollama
+  type: ClusterIP
+  ports:
+    - protocol: TCP
+      port: 11434
+      targetPort: 11434
