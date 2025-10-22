@@ -1,0 +1,3 @@
+[submodule "ai-ml-platform/gke-with-axion/streamlit"]
+	path = ai-ml-platform/gke-with-axion/streamlit
+	url = https://github.com/donmccasland/axion-inferencing

@@ -1,6 +1,8 @@
 import pulumi
 import pulumi_gcp as gcp
 import pulumi_kubernetes as kubernetes
+import pulumi_docker as docker
+import pulumi_docker_build as docker_build
 from pulumi_kubernetes.yaml import ConfigFile
 #from k8s.mixtral import Mixtral as mixtral
 
@@ -17,7 +19,7 @@ gke_master_node_count = gconfig.get_int("nodesPerZone", 2)
 #setting unique values for the nodepool
 gke_nodepool_name = gconfig.get("nodepoolName", "axion-nodepool")
 gke_nodepool_node_count = gconfig.get_int("nodesPerZone", 2)
-gke_ml_machine_type = gconfig.get("mlMachines", "c4a-standard-64")
+gke_ml_machine_type = gconfig.get("mlMachines", "c4a-standard-16")
 
 # Create a cluster in the new network and subnet
 gke_cluster = gcp.container.Cluster("axion-cluster-1", 
@@ -168,19 +170,6 @@ hfs_k8s_secret = kubernetes.core.v1.Secret(
     opts=pulumi.ResourceOptions(provider=kubeconfig)
 )
 
-# Apply vLLM K8s YAML
-
-#vllm_yaml = ConfigFile(
-#    "vllm_yaml",
-#    file="k8s/vllm-3-4b-it.yaml",
-#    opts=pulumi.ResourceOptions(provider=kubeconfig)
-#)
-
-#sdxl_yaml = ConfigFile(
-#    "sdxl_yaml",
-#    file="k8s/serve_sdxl_v5e.yaml",
-#    opts=pulumi.ResourceOptions(provider=kubeconfig)
-#)
 
 sc_yaml = ConfigFile(
     "hyperdisk-arm-sc-yaml",
@@ -194,24 +183,33 @@ ollama_yaml = ConfigFile(
     opts=pulumi.ResourceOptions(provider=kubeconfig,depends_on=[sc_yaml])
 )
 
+###
+# Artifact Registry Repo for Docker Images
+streamlit_image_repo = gcp.artifactregistry.Repository("streamlit-repo",
+    location=gcp_region,
+    repository_id="streamlit",
+    description="Repo for Open WebUI usage",
+    format="DOCKER",
+    docker_config={
+        "immutable_tags": True,
+    }
+)
 
-#deploy = mixtral(kubeconfig)
+# Docker image URL
+streamlit_image = str(gcp_region)+"-docker.pkg.dev/"+str(gcp_project)+"/streamlit/myapp"
 
-# Get GCP Secret with Hugging Face Key
-#hf_secret = gcp.secretmanager.get_secret(secret_id="hf-secret-key")
-
-# IAM Bindings
-#ray_sa_binding = gcp.secretmanager.SecretIamBinding("binding",
-#    #project=hf_secret["project"],
-#    secret_id=hf_secret.id,
-#    #secret_id="hf-secret-key",
-#    role="roles/secretmanager.secretAccessor",
-#    members=["principal://iam.googleapis.com/projects/"+str(gcp_project)+"/locations/global/workloadIdentityPools/"#+str(gcp_project)+".svc.id.goog/subject/ns/default/sa/"+str(hf_service_account.metadata['name'])])
-
-#pulumi.export("service_account_name", ray_service_account.metadata["name"])
-
-#service = deploy.mixtralService()
-#deployment = deploy.mixtral8x7b()
+# Build and Deploy Docker
+docker_image = docker_build.Image('openwebui',
+    tags=[streamlit_image],                                  
+    context=docker_build.BuildContextArgs(
+        location="./streamlit/",
+    ),
+    platforms=[
+        docker_build.Platform.LINUX_AMD64,
+        docker_build.Platform.LINUX_ARM64,
+    ],
+    push=True,
+)
 
 # Export the Service's IP address
 #service_ip = service.status.apply(

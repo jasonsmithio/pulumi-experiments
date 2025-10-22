@@ -2,3 +2,5 @@ pulumi>=3.0.0,<4.0.0
 pulumi-gcp>=8.27.0,<8.50.0
 pulumi-kubernetes>=4.22.2,<4.30.0
 streamlit>=1.44.1,<1.50.0
+pulumi-docker>=4.5.6,<5.0.0
+pulumi-docker-build>=0.0.10,<0.1.0
