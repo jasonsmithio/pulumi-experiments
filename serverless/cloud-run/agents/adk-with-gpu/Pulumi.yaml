@@ -1,6 +1,6 @@
-name: ollama-demo
+name: ADK with GPU
 runtime:
   name: python
   options:
     virtualenv: env
-description: A Python program to deploy Cloud Run instances with GPUs attached
+description: A Python program to deploy an agent written with ADK to Cloud Run with a GPU
