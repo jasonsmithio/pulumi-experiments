@@ -19,25 +19,41 @@ llm_bucket = gcp.storage.Bucket("llm-bucket",
     uniform_bucket_level_access=True,
     )
 
-# Artifact Registry Repo for Docker Images
-llm_repo = gcp.artifactregistry.Repository("llm-repo",
+# Artifact Registry Repo for AI Docker Images
+ai_gar = gcp.artifactregistry.Repository("agent-repo",
     location=gcp_region,
-    repository_id="openwebui",
-    description="Repo for Open WebUI usage",
+    repository_id="agents",
+    description="Repo for AI Agents running on Cloud Run",
     format="DOCKER",
     docker_config={
         "immutable_tags": True,
     }
 )
 
-# Docker image URL
-openwebui_image = str(gcp_region)+"-docker.pkg.dev/"+str(gcp_project)+"/openwebui/openwebui"
+# Ollama Docker Image URL
+ollama_repo = str(gcp_region)+"-docker.pkg.dev/"+str(gcp_project)+"/agents/ollama:latest"
+
+# Build and Deploy Ollama Docker Image
+ollama_image = docker_build.Image('ollama-image',
+    tags=[ollama_repo],                                  
+    context=docker_build.BuildContextArgs(
+        location="./ollama/",
+    ),
+    platforms=[
+        docker_build.Platform.LINUX_AMD64,
+        docker_build.Platform.LINUX_ARM64,
+    ],
+    push=True,
+)
+
+# Agent Docker image URL
+agent_repo = str(gcp_region)+"-docker.pkg.dev/"+str(gcp_project)+"/agents/agent-image"
 
 # Build and Deploy Docker
-docker_image = docker_build.Image('openwebui',
-    tags=[openwebui_image],                                  
+agent_image = docker_build.Image('agent-image',
+    tags=[agent_repo],                                  
     context=docker_build.BuildContextArgs(
-        location="./",
+        location="./adk-agent/prod/",
     ),
     platforms=[
         docker_build.Platform.LINUX_AMD64,
@@ -55,7 +71,11 @@ ollama_cr_service = cloudrun.Service("ollama_cr_service",
     launch_stage="BETA",
     template={
         "containers":[{
-            "image": "ollama/ollama:latest",
+            "image": ollama_image,
+            "envs": [{
+                "name":"OLLAMA_NUM_PARALLEL",
+                "value":4,
+            }],
             "resources": {
                 "cpuIdle": False,
                 "limits":{
@@ -112,28 +132,34 @@ ollama_binding = cloudrun.ServiceIamBinding("ollama-binding",
 ollama_url = ollama_cr_service.uri
 
 # Open WebUI Cloud Run instance
-openwebui_cr_service = cloudrun.Service("openwebui-service",
-    name="openwebui-service",
+agent_cr_service = cloudrun.Service("agent-service",
+    name="adk-agent-service",
     location=gcp_region,
     deletion_protection= False,
     ingress="INGRESS_TRAFFIC_ALL",
     launch_stage="BETA",
     template={
         "containers":[{
-            "image": "us-central1-docker.pkg.dev/"+str(gcp_project)+"/openwebui/openwebui",
+            "image": agent_image,
             "envs": [{
-                "name":"OLLAMA_BASE_URL",
-                "value":ollama_url,
+                "name":"GOOGLE_CLOUD_PROJECT",
+                "value":gcp_project,
             }
             ,{
-                "name":"WEBUI_AUTH",
-                "value":'false',  
+                "name":"GOOGLE_CLOUD_LOCATION",
+                "value": gcp_region,  
+            },{
+                "name":"GEMMA_MODEL_NAME",
+                "value":"gemma3:270m",
+            },{
+                "name":"OLLAMA_API_BASE",
+                "value":ollama_url,
             }],
             "resources": {
                 "cpuIdle": False,
                 "limits":{
-                    "cpu": "8",
-                    "memory": "16Gi",
+                    "cpu": "2",
+                    "memory": "4Gi",
                 },
                 "startup_cpu_boost": True,
             },
@@ -148,7 +174,7 @@ openwebui_cr_service = cloudrun.Service("openwebui-service",
             },
         }],
         "scaling": {      
-            "max_instance_count":4,
+            "max_instance_count":2,
             "min_instance_count":1,
         },
     },
@@ -156,18 +182,18 @@ openwebui_cr_service = cloudrun.Service("openwebui-service",
         "type": "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST",
         "percent": 100,
     }],
-    opts=pulumi.ResourceOptions(depends_on=[ollama_binding, docker_image]),
+    opts=pulumi.ResourceOptions(depends_on=[ollama_binding, ollama_image]),
 )
 
-openwebui_binding = cloudrun.ServiceIamBinding("openwebui-binding",
+agent_binding = cloudrun.ServiceIamBinding("agent-binding",
     project=gcp_project,
     location=gcp_region,
-    name=openwebui_cr_service,
+    name=agent_cr_service,
     role="roles/run.invoker",
     members=["allUsers"],
-    opts=pulumi.ResourceOptions(depends_on=[openwebui_cr_service]),
+    opts=pulumi.ResourceOptions(depends_on=[agent_cr_service]),
 )
 
 
 pulumi.export("ollama_url", ollama_cr_service.uri)
-pulumi.export("open_webui_url", openwebui_cr_service.uri)
+pulumi.export("open_webui_url", agent_cr_service.uri)
