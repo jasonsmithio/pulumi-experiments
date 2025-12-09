@@ -1,4 +1,4 @@
-name: ADK with GPU
+name: adk
 runtime:
   name: python
   options:

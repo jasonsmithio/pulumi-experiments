@@ -53,7 +53,7 @@ agent_repo = str(gcp_region)+"-docker.pkg.dev/"+str(gcp_project)+"/agents/agent-
 agent_image = docker_build.Image('agent-image',
     tags=[agent_repo],                                  
     context=docker_build.BuildContextArgs(
-        location="./adk-agent/prod/",
+        location="./adk-agent/",
     ),
     platforms=[
         docker_build.Platform.LINUX_AMD64,
@@ -196,4 +196,4 @@ agent_binding = cloudrun.ServiceIamBinding("agent-binding",
 
 
 pulumi.export("ollama_url", ollama_cr_service.uri)
-pulumi.export("open_webui_url", agent_cr_service.uri)
+pulumi.export("agent_url", agent_cr_service.uri)
