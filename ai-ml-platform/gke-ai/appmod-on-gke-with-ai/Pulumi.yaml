@@ -1,0 +1,6 @@
+name: appmod-on-gke-with-ai
+runtime:
+  name: python
+  options:
+    virtualenv: venv
+description: A Pulumi Python program to deploy AI/ML workloads on GKE created via the Jetski agent.

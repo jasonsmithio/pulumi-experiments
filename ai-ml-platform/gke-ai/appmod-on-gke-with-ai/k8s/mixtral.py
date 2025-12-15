@@ -25,6 +25,13 @@ class Mixtral:
                         },
                     ),
                     spec=kubernetes.core.v1.PodSpecArgs(
+                        tolerations=[
+                            kubernetes.core.v1.TolerationArgs(
+                                key="nvidia.com/gpu",
+                                operator="Exists",
+                                effect="NoSchedule",
+                            ),
+                        ],
                         containers=[kubernetes.core.v1.ContainerArgs(
                             env=[
                                 kubernetes.core.v1.EnvVarArgs(

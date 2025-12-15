@@ -14,12 +14,12 @@ gke_master_version = gconfig.get("master_version", 1.29)
 gke_master_node_count = gconfig.get_int("nodesPerZone", 1)
 
 #setting unique values for the nodepool
-gke_nodepool_name = gconfig.get("nodepoolName", "mixtral-nodepool")
-gke_nodepool_node_count = gconfig.get_int("nodesPerZone", 2)
-gke_ml_machine_type = gconfig.get("mlMachines", "g2-standard-24")
+gpu_nodepool_name = gconfig.get("nodepoolName", "mixtral-nodepool")
+gpu_nodepool_node_count = gconfig.get_int("nodesPerZone", 2)
+gpu_ml_machine_type = gconfig.get("mlMachines", "g2-standard-24")
 
 # Create a cluster in the new network and subnet
-gke_cluster = gcp.container.Cluster("cluster-1", 
+gke_cluster = gcp.container.Cluster("gke-cluster", 
     name = gke_cluster_name,
     deletion_protection=False,
     location = gcp_region,
@@ -49,15 +49,15 @@ gke_cluster = gcp.container.Cluster("cluster-1",
 )
 
 # Defining the GKE Node Pool
-gke_nodepool = gcp.container.NodePool("nodepool-1",
-    name = gke_nodepool_name,
+gpu_nodepool = gcp.container.NodePool("gpu-nodepool",
+    name = gpu_nodepool_name,
     location = gcp_region,
     node_locations = [gcp_zone],
     cluster = gke_cluster.id,
-    node_count = gke_nodepool_node_count,
+    node_count = gpu_nodepool_node_count,
     node_config = gcp.container.NodePoolNodeConfigArgs(
         preemptible = False,
-        machine_type = gke_ml_machine_type,
+        machine_type = gpu_ml_machine_type,
         disk_size_gb = 20,
         ephemeral_storage_local_ssd_config={
             "local_ssd_count":"2",
@@ -84,6 +84,32 @@ gke_nodepool = gcp.container.NodePool("nodepool-1",
         max_node_count = 2
     ),
     # Set the Nodepool Management configuration
+    management = gcp.container.NodePoolManagementArgs(
+        auto_repair  = True,
+        auto_upgrade = True
+    )
+)
+
+# System Node Pool for non-GPU workloads
+system_nodepool = gcp.container.NodePool("system-nodepool",
+    name = "system-pool",
+    location = gcp_region,
+    node_locations = [gcp_zone],
+    cluster = gke_cluster.id,
+    initial_node_count = 1,
+    node_config = gcp.container.NodePoolNodeConfigArgs(
+        machine_type = "e2-standard-4",
+        disk_size_gb = 50,
+        oauth_scopes = ["https://www.googleapis.com/auth/cloud-platform"],
+        shielded_instance_config = gcp.container.NodePoolNodeConfigShieldedInstanceConfigArgs(
+            enable_integrity_monitoring = True,
+            enable_secure_boot = True
+        )
+    ),
+    autoscaling = gcp.container.NodePoolAutoscalingArgs(
+        min_node_count = 1,
+        max_node_count = 2
+    ),
     management = gcp.container.NodePoolManagementArgs(
         auto_repair  = True,
         auto_upgrade = True
@@ -120,16 +146,34 @@ users:
 """.format(info[2]['cluster_ca_certificate'], info[1], '{0}_{1}_{2}'.format(gcp_project, gcp_zone, info[0])))
 
 # Make a Kubernetes provider instance that uses our cluster from above.
-kubeconfig = kubernetes.Provider('gke_k8s', kubeconfig=k8s_config, opts=pulumi.ResourceOptions(depends_on=[gke_nodepool]))
+# We depend on system_nodepool too to ensure cluster is ready for system pods
+kubeconfig = kubernetes.Provider('gke_k8s', kubeconfig=k8s_config, opts=pulumi.ResourceOptions(depends_on=[gpu_nodepool, system_nodepool]))
 
-# Create a GCP service account for the nodepool
-#gke_nodepool_sa = gcp.serviceaccount.Account(
-#    "gke-nodepool-sa",
-#    account_id=pulumi.Output.concat(gke_cluster.name, "-np-1-sa"),
-#    display_name="Nodepool 1 Service Account",
-#
-#    depends_on=[gke_cluster]
-#)
+# Create a dedicated namespace for Ray system components
+ray_system_ns = kubernetes.core.v1.Namespace("ray-system",
+    metadata=kubernetes.meta.v1.ObjectMetaArgs(
+        name="ray-system",
+    ),
+    opts=pulumi.ResourceOptions(provider=kubeconfig)
+)
+
+# Deploy KubeRay Operator
+ray_operator = kubernetes.helm.v3.Release("kuberay-operator",
+    args=kubernetes.helm.v3.ReleaseArgs(
+        chart="kuberay-operator",
+        version="1.2.2",
+        repository_opts=kubernetes.helm.v3.RepositoryOptsArgs(
+            repo="https://ray-project.github.io/kuberay-helm/",
+        ),
+        namespace=ray_system_ns.metadata.name,
+        values={
+            "nodeSelector": {
+                "cloud.google.com/gke-nodepool": "system-pool"
+            }
+        }
+    ),
+    opts=pulumi.ResourceOptions(provider=kubeconfig)
+)
 
 # Create a ServiceAccount in a Kubernetes cluster for default namespace
 hf_service_account = kubernetes.core.v1.ServiceAccount("k8s-sa",
@@ -141,21 +185,39 @@ hf_service_account = kubernetes.core.v1.ServiceAccount("k8s-sa",
     opts=pulumi.ResourceOptions(provider=kubeconfig)
 )
 
+# Retrieve the Hugging Face Token from GCP Secret Manager
+# We fetch the latest version of the secret to inject into K8s
+hf_secret_version = gcp.secretmanager.get_secret_version_access(
+    secret="hf-secret-key",
+    version="latest",
+    project=gcp_project
+)
+
+# Create Kubernetes Secret with the HF token
+k8s_hf_secret = kubernetes.core.v1.Secret("hf-secret",
+    metadata=kubernetes.meta.v1.ObjectMetaArgs(
+        name="hf-secret",
+        namespace="default",
+    ),
+    string_data={
+        "hf_api_token": hf_secret_version.secret_data,
+    },
+    type="Opaque",
+    opts=pulumi.ResourceOptions(provider=kubeconfig)
+)
 
 deploy = mixtral(kubeconfig)
 
-# Get GCP Secret with Hugging Face Key
+# Get GCP Secret with Hugging Face Key (for IAM binding reference)
 hf_secret = gcp.secretmanager.get_secret(secret_id="hf-secret-key")
 
-# IAM Bindings
-ray_sa_binding = gcp.secretmanager.SecretIamBinding("binding",
-    #project=hf_secret["project"],
+# IAM Bindings for Workload Identity
+# We allow the K8s Service Account to access the GCP Secret
+hf_sa_binding = gcp.secretmanager.SecretIamBinding("binding",
     secret_id=hf_secret.id,
-    #secret_id="hf-secret-key",
     role="roles/secretmanager.secretAccessor",
-    members=["principal://iam.googleapis.com/projects/"+str(gcp_project)+"/locations/global/workloadIdentityPools/"+str(gcp_project)+".svc.id.goog/subject/ns/default/sa/"+str(hf_service_account.metadata['name'])])
-
-#pulumi.export("service_account_name", ray_service_account.metadata["name"])
+    members=[pulumi.Output.format("principal://iam.googleapis.com/projects/{0}/locations/global/workloadIdentityPools/{0}.svc.id.goog/subject/ns/default/sa/{1}", gcp_project, hf_service_account.metadata['name'])]
+)
 
 service = deploy.mixtralService()
 deployment = deploy.mixtral8x7b()
