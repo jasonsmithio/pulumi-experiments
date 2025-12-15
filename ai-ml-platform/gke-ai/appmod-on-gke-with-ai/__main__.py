@@ -1,7 +1,7 @@
 import pulumi
 import pulumi_gcp as gcp
 import pulumi_kubernetes as kubernetes
-from k8s.mixtral import Mixtral as mixtral
+from ray_cluster import RayCluster
 
 # Get some provider-namespaced configuration values
 gconfig = pulumi.Config("gcp")
@@ -9,17 +9,17 @@ gcp_project = gconfig.require("project")
 gcp_region = gconfig.get("region", "us-central1")
 gcp_zone = gconfig.get("zone", "us-central1-a")
 gke_network = gconfig.get("gkeNetwork", "default")
-gke_cluster_name = gconfig.get("clusterName", "mixtral-cluster")
+gke_cluster_name = gconfig.get("clusterName", "ray-cluster")
 gke_master_version = gconfig.get("master_version", 1.29)
 gke_master_node_count = gconfig.get_int("nodesPerZone", 1)
 
 #setting unique values for the nodepool
-gpu_nodepool_name = gconfig.get("nodepoolName", "mixtral-nodepool")
+gpu_nodepool_name = gconfig.get("nodepoolName", "ray-gpu-nodepool")
 gpu_nodepool_node_count = gconfig.get_int("nodesPerZone", 2)
 gpu_ml_machine_type = gconfig.get("mlMachines", "g2-standard-24")
 
 # Create a cluster in the new network and subnet
-gke_cluster = gcp.container.Cluster("gke-cluster", 
+gke_cluster = gcp.container.Cluster("ray-cluster", 
     name = gke_cluster_name,
     deletion_protection=False,
     location = gcp_region,
@@ -175,6 +175,19 @@ ray_operator = kubernetes.helm.v3.Release("kuberay-operator",
     opts=pulumi.ResourceOptions(provider=kubeconfig)
 )
 
+# Instantiate the Ray Cluster component
+pytorch_cluster = RayCluster(
+    "pytorch-mnist-cluster",
+    ray_version="2.37.0",
+    worker_replicas=4,
+    head_cpu="2",
+    head_memory="4Gi",
+    worker_cpu="4",
+    worker_memory="8Gi"
+)
+
+
+
 # Create a ServiceAccount in a Kubernetes cluster for default namespace
 hf_service_account = kubernetes.core.v1.ServiceAccount("k8s-sa",
     metadata=kubernetes.meta.v1.ObjectMetaArgs(
@@ -230,4 +243,6 @@ service_ip = service.status.apply(
 pulumi.export('service_ip', service_ip)
 pulumi.export("clusterName", gke_cluster.name)
 pulumi.export("clusterId", gke_cluster.id)
+# Export the presumed dashboard URL
+pulumi.export("ray_dashboard", pytorch_cluster.dashboard_url)
 pulumi.export("service_account_name", hf_service_account.metadata['name'])
