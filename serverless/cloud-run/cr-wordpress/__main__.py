@@ -92,16 +92,16 @@ cr_iam_binding = pulumi_gcp.projects.IAMMember("cr-wp-service-account-binding",
     opts=pulumi.ResourceOptions(depends_on=[wp_service_account]),
 )
 
-logging_iam_binding = pulumi_gcp.projects.IAMMember("cr-wp-service-account-binding",
+logging_iam_binding = pulumi_gcp.projects.IAMMember("log-wp-service-account-binding",
     project=gcp_project,
     role="roles/stackdriver.resourceMetadata.writer", 
     member=wp_service_account.email.apply(lambda email: f"serviceAccount:{email}"),
     opts=pulumi.ResourceOptions(depends_on=[wp_service_account]),
 )
 
-monitoring_iam_binding = pulumi_gcp.projects.IAMMember("cr-wp-service-account-binding",
+monitoring_iam_binding = pulumi_gcp.projects.IAMMember("monitor-wp-service-account-binding",
     project=gcp_project,
-    role="roles/monitoring.metricWriter ", 
+    role="roles/monitoring.metricWriter", 
     member=wp_service_account.email.apply(lambda email: f"serviceAccount:{email}"),
     opts=pulumi.ResourceOptions(depends_on=[wp_service_account]),
 )
