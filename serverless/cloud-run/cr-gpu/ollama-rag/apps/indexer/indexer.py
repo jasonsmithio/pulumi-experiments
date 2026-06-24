@@ -2,7 +2,6 @@ import os
 from google.cloud.alloydb.connector import Connector
 from google.cloud import storage
 import pg8000
-from langchain.llms import Ollama
 from langchain_community.vectorstores.pgvector import PGVector
 from langchain_google_vertexai import VertexAIEmbeddings
 import pymupdf
