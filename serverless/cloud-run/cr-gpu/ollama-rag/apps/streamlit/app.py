@@ -1,14 +1,12 @@
 import os
 from typing import List
 from fastapi import FastAPI
-from langchain.llms import Ollama
-from langchain.output_parsers import CommaSeparatedListOutputParser
-from langchain.prompts import PromptTemplate
+from langchain_ollama import OllamaLLM
 import streamlit
 
 ollama_url = os.environ["OLLAMA_BASE_URL"]
 
-llm = Ollama(model="gemma2:2b", base_url=ollama_url, verbose=True)
+llm = OllamaLLM(model="gemma2:2b", base_url=ollama_url, verbose=True)
 
 def sendPrompt(prompt):
     global llm
