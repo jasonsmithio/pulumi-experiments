@@ -1,0 +1,158 @@
+# Kubernetes Manifest for deploying Ollama + Gemma 4 on GKE with Google Axion (C4A) Processors
+# - ConfigMap (gemma4-modelfile-config): Supplies the 14-thread Modelfile and bootstrap script.
+# - StatefulSet (ollama): Runs on Arm64 C4A nodes with a 30Gi Hyperdisk Balanced PVC and
+#   automatically pulls gemma4:4b and builds gemma4:4b-highthread (num_thread 14) on startup.
+# - Service (ollama-service): Exposes the Ollama OpenAI-compatible API in-cluster on port 11434.
+# - Gateway & HTTPRoute: Optional external L7 Gateway route to ollama-service.
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gemma4-modelfile-config
+  namespace: default
+data:
+  modelfile.txt: |
+    FROM gemma4:4b
+    PARAMETER temperature 1
+    PARAMETER top_k 64
+    PARAMETER top_p 0.95
+    PARAMETER num_thread 14
+    PARAMETER stop <end_of_turn>
+  bootstrap-gemma4.sh: |
+    #!/bin/sh
+    set -e
+    echo "[axion-bootstrap] Waiting for local Ollama server on 127.0.0.1:11434..."
+    until ollama list >/dev/null 2>&1; do
+      sleep 2
+    done
+    if ! ollama list | grep -q "gemma4:4b"; then
+      echo "[axion-bootstrap] Pulling base model gemma4:4b onto Hyperdisk Balanced PVC..."
+      ollama pull gemma4:4b
+    fi
+    if ! ollama list | grep -q "gemma4:4b-highthread"; then
+      echo "[axion-bootstrap] Building 14-thread tuned gemma4:4b-highthread for C4A..."
+      ollama create -f /etc/ollama-modelfile/modelfile.txt gemma4:4b-highthread
+    fi
+    echo "[axion-bootstrap] Ready! Available models:"
+    ollama list
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ollama
+  namespace: default
+spec:
+  serviceName: "ollama-service"
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ollama
+  template:
+    metadata:
+      labels:
+        app: ollama
+        ai.gke.io/model: gemma-4-4b
+        ai.gke.io/inference-server: ollama
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/arch
+                operator: In
+                values:
+                - arm64
+      nodeSelector:
+        cloud.google.com/gke-nodepool: "axion-nodepool"
+      containers:
+        - name: ollama
+          image: ollama/ollama:latest
+          ports:
+            - containerPort: 11434
+              name: api
+          env:
+            - name: OLLAMA_HOST
+              value: "0.0.0.0:11434"
+            - name: OLLAMA_NUM_PARALLEL
+              value: "1"
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - "/bin/sh"
+                  - "-c"
+                  - "nohup /bin/sh /etc/ollama-modelfile/bootstrap-gemma4.sh > /tmp/bootstrap-gemma4.log 2>&1 &"
+          volumeMounts:
+            - name: ollama-models-pvc
+              mountPath: /root/.ollama
+            - name: gemma4-modelfile-vol
+              mountPath: /etc/ollama-modelfile
+              readOnly: true
+          # Sized for c4a-standard-16 (16 Arm Neoverse V2 vCPUs, 64 GB DDR5 RAM):
+          # Allocates up to 15 vCPUs so PARAMETER num_thread 14 saturates 14 cores
+          # while leaving 2 vCPUs for GKE kubelet and system pods.
+          resources:
+            requests:
+              cpu: "12"
+              memory: "16Gi"
+            limits:
+              cpu: "15"
+              memory: "32Gi"
+      volumes:
+        - name: gemma4-modelfile-vol
+          configMap:
+            name: gemma4-modelfile-config
+            defaultMode: 0755
+  volumeClaimTemplates:
+    - metadata:
+        name: ollama-models-pvc
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        storageClassName: "hyperdisk-arm"
+        resources:
+          requests:
+            storage: 30Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama-service
+  namespace: default
+spec:
+  selector:
+    app: ollama
+  type: ClusterIP
+  ports:
+    - protocol: TCP
+      port: 11434
+      targetPort: 11434
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: axion-gemma4-gateway
+  namespace: default
+spec:
+  gatewayClassName: gke-l7-global-external-managed
+  listeners:
+  - protocol: HTTP
+    port: 11434
+    name: http
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: axion-gemma4-route
+  namespace: default
+spec:
+  parentRefs:
+  - name: axion-gemma4-gateway
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: ollama-service
+      port: 11434

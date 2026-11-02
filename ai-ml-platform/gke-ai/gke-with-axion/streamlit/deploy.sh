@@ -1,10 +1,16 @@
-AR_REPO='axion-inference-repo'
-SERVICE_NAME='axion-inference-app'
-GOOGLE_CLOUD_REGION=us-central1
-GOOGLE_CLOUD_PROJECT=axion-inference-demo
-gcloud config set project axion-inference-demo
-docker build -t axion-inference-app:latest .
-docker tag axion-inference-app:latest us-central1-docker.pkg.dev/axion-inference-demo/axion-inference-repo/axion-inference-app:latest 
-docker push us-central1-docker.pkg.dev/axion-inference-demo/axion-inference-repo/axion-inference-app:latest
-gcloud run deploy "$SERVICE_NAME"   --port=8080   --image="$GOOGLE_CLOUD_REGION-docker.pkg.dev/$GOOGLE_CLOUD_PROJECT/$AR_REPO/$SERVICE_NAME"   --allow-unauthenticated   --region=$GOOGLE_CLOUD_REGION   --platform=managed    --project=$GOOGLE_CLOUD_PROJECT   --set-env-vars=GOOGLE_CLOUD_PROJECT=$GOOGLE_CLOUD_PROJECT,GOOGLE_CLOUD_REGION=$GOOGLE_CLOUD_REGION
+#!/usr/bin/env bash
+set -euo pipefail
 
+AR_REPO="${AR_REPO:-streamlit}"
+SERVICE_NAME="${SERVICE_NAME:-axion-inference-app}"
+GOOGLE_CLOUD_REGION="${GOOGLE_CLOUD_REGION:-us-central1}"
+GOOGLE_CLOUD_PROJECT="${GOOGLE_CLOUD_PROJECT:-$(gcloud config get-value project)}"
+OLLAMA_BASE_URL="${OLLAMA_BASE_URL:-http://ollama-service:11434/v1}"
+OLLAMA_MODEL="${OLLAMA_MODEL:-gemma4:4b-highthread}"
+
+IMAGE_URI="${GOOGLE_CLOUD_REGION}-docker.pkg.dev/${GOOGLE_CLOUD_PROJECT}/${AR_REPO}/${SERVICE_NAME}:latest"
+
+docker buildx build \
+  --platform linux/amd64,linux/arm64 \
+  -t "${IMAGE_URI}" \
+  --push .

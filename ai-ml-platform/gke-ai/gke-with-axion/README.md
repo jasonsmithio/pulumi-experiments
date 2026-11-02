@@ -1,259 +1,154 @@
-# Using Pulumi to Inference with Gemma hosted on GKE with Google Axion Processors
+# Inferencing with Gemma 4 on GKE using Google Axion (C4A) Processors & Pulumi
 
-With this tutorial you will use Pulumi to stand up a [GKE](https://cloud.google.com/kubernetes-engine "GKE") cluster with [Axion ARM processors](https://cloud.google.com/products/axion "Axion ARM processors). We will then deploy [Gemma 3](https://ai.google.dev/gemma/docs/core "Gemma 3") using [vLLM](https://docs.vllm.ai/en/latest/ "vLLM") on GKE. 
+This repository demonstrates how to declaratively provision a **Google Kubernetes Engine (GKE)** cluster powered by **Google Axion** (`c4a-standard-16` Arm Neoverse V2) processors using **Pulumi (Python)**, attach persistent **Google Cloud Hyperdisk Balanced** storage (`30Gi`), automatically pull and tune **Gemma 4 4B** (`gemma4:4b-highthread` with `PARAMETER num_thread 14`) on **Ollama**, and serve a live **Streamlit** chat interface in-cluster.
 
-We will then deploy a [Streamlit](https://streamlit.io/ "Streamlit") application to [Cloud Run](https://cloud.google.com/run "Cloud Run") and inference with the Gemma via vLLM. 
+---
 
+## Architecture Overview
 
-## What is Axion?
-[C4D Machines](https://cloud.google.com/blog/products/compute/c4d-vms-unparalleled-performance-for-business-workloads "C4D Machines")
+1. **Pulumi IaC (`__main__.py`)**:
+   - Provisions a VPC-native GKE cluster (`axion-cluster`) with the Compute Engine Persistent Disk CSI driver (`hyperdisk-balanced`), GCS Fuse CSI driver, HTTP Load Balancing, and Gateway API enabled.
+   - Creates an autoscaling Arm64 GKE Node Pool (`axion-nodepool`, `1–8` nodes) running `c4a-standard-16` VMs (`16` Arm Neoverse V2 vCPUs, `64 GB` DDR5 memory).
+2. **Hyperdisk Balanced Storage (`k8s/hyperdisk-arm-sc.yaml`)**:
+   - Defines the `hyperdisk-arm` `StorageClass` (`pd.csi.storage.gke.io`, `type: hyperdisk-balanced`, `WaitForFirstConsumer`) so `30Gi` model weights persist across pod restarts.
+3. **Arm64 Ollama StatefulSet & Automated Gemma 4 Thread Tuning (`k8s/ollama-gemma4.yaml`)**:
+   - Schedules the `ollama` `StatefulSet` strictly onto `kubernetes.io/arch: arm64` Axion nodes.
+   - Mounts a `ConfigMap` (`gemma4-modelfile-config`) containing `modelfile.txt` (`FROM gemma4:4b`, `PARAMETER num_thread 14`) and runs an automatic `postStart` bootstrap script that pulls `gemma4:4b` and builds `gemma4:4b-highthread` on the `30Gi` Hyperdisk PVC.
+   - Reserves `15` vCPUs (`limits.cpu: "15"`) for the Ollama container so `num_thread 14` saturates 14 Arm Neoverse V2 cores while leaving 2 vCPUs on the `c4a-standard-16` node for the GKE `kubelet` and network I/O.
+4. **Multi-Arch Streamlit Frontend (`streamlit/`)**:
+   - Uses `pulumi_docker_build` (`docker buildx`) to build and push a multi-arch (`linux/amd64`, `linux/arm64`) container image to Artifact Registry.
+   - Deploys `streamlit-gemma4-ui` onto the GKE Axion node pool (`kubernetes.io/arch: arm64`), connected in-cluster to `http://ollama-service:11434/v1` via the OpenAI Python SDK, and exposes it through a Kubernetes `LoadBalancer` Service (`streamlit-gemma4-service`).
 
-## What is Streamlit
+---
 
-## Gemma and vLLM
+## Why Google Axion (C4A) for Gemma 4 Inferencing?
 
-## Before we get started... 
-Make sure you have access to a Google Cloud project that supports NVIDIA L4s in your desired region per your quotas. This tutorial uses `us-central1` but you can use a different one if you choose to do so. Also make sure that you have acceess to a terminal that can execute `kubectl`.
+- **Up to 65% Better Price-Performance** and **60% Better Energy Efficiency** than comparable current-generation x86 VMs on Google Cloud.
+- **Arm Neoverse V2 + CMN-700 Mesh + DDR5 Memory**: High memory bandwidth and low-latency core-to-core communication feed Gemma 4 weights to the CPU without bottlenecking token generation.
+- **Titanium Offloads & Arm Kleidi AI Libraries**: Google's custom Titanium microcontrollers offload VPC networking and Hyperdisk storage I/O from the CPU, while Arm Kleidi SVE2/NEON kernels accelerate matrix multiplication in Ollama, `llama.cpp`, vLLM, and PyTorch.
 
-## Some Pre-requesites 
+---
 
-### Setting Up Hugging Face
-Part of what we need to do is create an account on [Hugging Face](https://huggingface.co/ "Hugging Face").
+## Prerequisites
 
-### Some Environment Variables
-
-Before we get started, we will set a few basic environment variables in our terminal. This will make things easier for us as we move forward. Copy and paste the below snippet into your terminal. Be sure to set your `PROJECT_ID` and `NETWORK`. You may be able to set the network to *default* as there is usually a default network in a brand new environment.  
+1. **Google Cloud SDK (`gcloud`)**, **`kubectl`**, **`gke-gcloud-auth-plugin`**, **Docker** (with `buildx`), and **Pulumi CLI** (`>= 3.0`) installed.
+2. Export your environment variables:
 
 ```bash
 export PROJECT_ID=<your-project-id>
-export REGION=<your region>
-export ZONE=${REGION}-a 
+export REGION=us-central1
+export ZONE=${REGION}-a
 export CLUSTER_NAME=axion-cluster
-export NETWORK=<your network>
-export HF_TOKEN=<Your Hugging Face Token>
+export NETWORK=default
 ```
 
-### Configuring the Google Cloud Platform (GCP) environment
-
-Now that the variables are set, let's make sure that your GCP environment is setup and that you are authenticated. 
+3. Authenticate with Google Cloud and enable required APIs:
 
 ```bash
-gcloud auth login 
-gcloud config set project $PROJECT_ID 
+gcloud auth login
+gcloud config set project $PROJECT_ID
 gcloud config set compute/region $REGION
 gcloud config set compute/zone $ZONE
 gcloud auth application-default login
-```
+gcloud auth configure-docker ${REGION}-docker.pkg.dev
 
-Now that we are authenticated, let's enable some APIs. Every resource in Google Cloud has an API that needs to be enabled. By default, new projects have all APIs turned off so if you are just getting started, it's important to turn them on. You only need to do this once. 
-
-```bash
 gcloud services enable \
-      cloudresourcemanager.googleapis.com \
-      compute.googleapis.com \
-      container.googleapis.com \
-      cloudbuild.googleapis.com \
-      containerregistry.googleapis.com \
-    secretmanager.googleapis.com
+  cloudresourcemanager.googleapis.com \
+  compute.googleapis.com \
+  container.googleapis.com \
+  artifactregistry.googleapis.com \
+  cloudbuild.googleapis.com \
+  secretmanager.googleapis.com
 ```
 
-We will create a secret in [Secret Manager](https://cloud.google.com/security/products/secret-manager "Secret Manager") for our Hugging Face token.
-
-```bash
-echo -n "<MY HUGGING FACE KEY>" | gcloud secrets create hf-secret-key \
-    --replication-policy="automatic" \
-    --data-file=-
-```
-
-And finally, we'll do some IAM binding. In short, this will give our Kubernetes cluster the ability to write logs. 
+4. Grant standard logging, monitoring, and storage roles to the Compute Engine default service account:
 
 ```bash
 PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format='value(projectNumber)')
 GCE_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
 
 gcloud projects add-iam-policy-binding $PROJECT_ID \
---member=serviceAccount:${GCE_SA} --role=roles/monitoring.metricWriter
+  --member=serviceAccount:${GCE_SA} --role=roles/monitoring.metricWriter
 gcloud projects add-iam-policy-binding $PROJECT_ID \
---member=serviceAccount:${GCE_SA} --role=roles/stackdriver.resourceMetadata.writer
+  --member=serviceAccount:${GCE_SA} --role=roles/stackdriver.resourceMetadata.writer
 gcloud projects add-iam-policy-binding $PROJECT_ID \
---member=serviceAccount:${GCE_SA} --role=roles/compute.storageAdmin
-```
-This CAN be configured in Pulumi but for the purposes of this demo, we will set it in terminal. 
-
-
-
-### Clone Demo Code from GitHub
-
-In whatever directory you want to execute this code, run the below command in the terminal. It will pull down this GitHub repo and place you in the folder
-
-```bash
-git clone https://github.com/jasonsmithio/ai-gke-pulumi-demo
-cd ai-gke-pulumi-demo
+  --member=serviceAccount:${GCE_SA} --role=roles/compute.storageAdmin
 ```
 
-### Staging Pulumi Environment
+---
 
-The first thing we need to do is setup a Pulumi Stack
+## Configure & Deploy with Pulumi
+
+1. Create and activate a Python virtual environment and install dependencies:
 
 ```bash
-pulumi stack init
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
 ```
 
-### Settings some variables
-
-In our Python demo, we will be standing up a GKE Cluster. Pulumi allows us to [configur](https://www.pulumi.com/docs/concepts/config/) environment variables in a `Pulumi.<env>.yaml` file. While you can manually build the file, you can also just execute the commands below.
+2. Initialize (or select) your Pulumi stack and configure stack settings:
 
 ```bash
+pulumi stack init dev
 pulumi config set gcp:project $PROJECT_ID
 pulumi config set gcp:region $REGION
 pulumi config set gcp:zone $ZONE
-pulumi config set projectNumber $PROJECT_NUMBER
-pulumi config set gceSA $GCE_SA  
 pulumi config set gkeNetwork $NETWORK
-pulumi config set clusterName axion-cluster
-pulumi config set master_version 1.31
-pulumi config set node_count 5
-pulumi config set node_machine_type c4a-standard-32
+pulumi config set clusterName $CLUSTER_NAME
+pulumi config set nodepoolName axion-nodepool
+pulumi config set nodesPerZone 2
+pulumi config set mlMachines c4a-standard-16
+pulumi config set ollamaModel gemma4:4b-highthread
 ```
 
-Notice how we are using some of the variables we set earlier.
-
-
-## Pulumi and Python
-
-You will see that I have a `__main__.py` file in the root. This program will tell Pulumi to build a Kubernetes cluster with machine type *n2d-standard-4*. It will also create a separate nodepool with *g2-standard-24* machines. This machine type is needed to run the [NVIDIA L4s](https://cloud.google.com/blog/products/compute/introducing-g2-vms-with-nvidia-l4-gpus).
-
-Once completed, it will create a [kubeconfig](https://kubernetes.io/docs/concepts/configuration/organize-cluster-access-kubeconfig/) so that we can access the cluster. In the `k8s` directory, you will see that I created a `mixtral.py` file. This Python module will deploy the Kubernetes deployment and a service. While [Gateways](https://kubernetes.io/docs/concepts/services-networking/gateway/) are the current best practice for exposing a Kubernetes workload, for the purposes of this demo, we are using a [LoadBalancer](https://kubernetes.io/docs/tasks/access-application-cluster/create-external-load-balancer/).
-
-The `mixtral.py` module is just a containerized version of the `mixtral-huggingface.yaml` file in the same directory. The file looks like this
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: mixtral-8x7b
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: mixtral-8x7b
-  template:
-    metadata:
-      labels:
-        app: mixtral-8x7b
-    spec:
-      containers:
-      - name: mixtral-8x7b
-        image: ghcr.io/huggingface/text-generation-inference:1.4.2
-        resources:
-          limits:
-            nvidia.com/gpu: 2
-        ports:
-        - name: server-port
-          containerPort: 80
-        env:
-        - name: MODEL_ID
-          value: mistralai/Mixtral-8x7B-v0.1
-        - name: NUM_SHARD
-          value: "2"
-        - name: MAX_BATCH_TOTAL_TOKENS
-          value: "1024000"
-        - name: MAX_BATCH_TOKENS
-          value: "32000"
-        - name: PYTORCH_CUDA_ALLOC_CONF
-          value: "max_split_size_mb:512"
-        - name: QUANTIZE
-          value: "bitsandbytes-nf4"
-        #- name: PORT
-        #  value: "3000"
-        volumeMounts:
-          - mountPath: /dev/shm
-            name: dshm
-          - mountPath: /data
-            name: data
-      volumes:
-         - name: dshm
-           emptyDir:
-              medium: Memory
-         - name: data
-           hostPath:
-            path: /mnt/stateful_partition/kube-ephemeral-ssd/mistral-data
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: mixtral-8x7b-service
-  namespace: default
-spec:
-  type: LoadBalancer
-  ports:
-  - port: 80
-    targetPort: 80
-  selector:
-    app: mixtral-8x7b
-```
-
-Now I want to let you in on a secret. I didn't convert the YAML manifest manually. I used a neat tool called[`pulumi convert`](https://www.pulumi.com/docs/cli/commands/pulumi_convert/). I ran the command `pulumi convert --from kubernetes --language python` and it generated a Python file that I was then able to convert. 
-
-## Standing Up Our Pulumi Environment
-
-We will execute now let Pulumi take our Python program and deploy
+3. Provision the GKE Axion cluster, Hyperdisk storage, Ollama `StatefulSet`, multi-arch Streamlit container, and LoadBalancer Service in a single step:
 
 ```bash
 pulumi up
 ```
 
-### Testing
+---
 
-At this point, you should be able to access the model via URL. You may be curious, what can you do now. Well let's look at the documentation. 
+## Verifying & Benchmarking Gemma 4 on GKE Axion
 
-This step is also a good way to test if your model is running. Let's get the IP address of our service. 
+1. Fetch cluster credentials and verify your `arm64` Axion nodes:
 
 ```bash
-URL=$(kubectl get service mixtral-8x7b-service -o jsonpath=’{.status.loadBalancer.ingress[0].ip}’)
-echo “http://${URL}/docs"
+gcloud container clusters get-credentials $CLUSTER_NAME --region $REGION --project $PROJECT_ID
+kubectl get nodes -o wide
 ```
 
-The `echo` command will give you a URL that you can copy and paste into your browser. You should see something like this. 
+2. Watch the automatic `gemma4:4b` and `gemma4:4b-highthread` bootstrap inside `ollama-0`:
 
-![Mistral Docs Image](images/mixtral-docs-page.png)
-
-If you see something similar to that image, congratulations, everything is working. If not, give it another 5 or so minutes and try again. 
-
-If you click around, you can get sample documentation to show you how to call the Mixtral APIs and use the LLM. For example, choose the very first option. It will say `POST /`. You will see an option that says *Try It Out*. Click that and then a sample JSON body will apear. Click execute and it will run and give you a response. 
-
-If you want to do a real test, choose the `/generate` option. 
-
-```json
-{
- "inputs": "[INST] You are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe. Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. Please ensure that your responses are socially unbiased and positive in nature. If a question does not make any sense, or is not factually coherent, explain why instead of answering something not correct. If you don’t know the answer to a question, please don’t share false information. What is a Kubernetes secret?[/INST]",
- "parameters": {
- "best_of": 1,
- "do_sample": true,
- "max_new_tokens": 400,
- "repetition_penalty": 1.03,
- "return_full_text": false,
- "temperature": 0.5,
- "top_k": 10,
- "top_n_tokens": 5,
- "top_p": 0.95,
- "truncate": null,
- "typical_p": 0.95,
- "watermark": true
- }
-}
+```bash
+kubectl exec -it ollama-0 -- cat /tmp/bootstrap-gemma4.log
+kubectl exec -it ollama-0 -- ollama list
 ```
 
+> **Note:** If you want to manually inspect or customize the Modelfile inside the pod:
+> ```bash
+> kubectl exec -it ollama-0 -- bash
+> ollama pull gemma4:4b
+> ollama show --modelfile gemma4:4b > modelfile.txt
+> # Ensure 'PARAMETER num_thread 14' is set in modelfile.txt
+> ollama create -f ./modelfile.txt gemma4:4b-highthread
+> ```
+
+3. Open the live Streamlit Chat UI using the Pulumi output URL:
+
+```bash
+pulumi stack output streamlitUrl
+```
+
+In the Streamlit sidebar, you can toggle between **`gemma4:4b-highthread`** (14 Arm Neoverse V2 threads) and **`gemma4:4b`** (default threads) to compare live `tokens/second` throughput on your `c4a-standard-16` GKE node!
+
+---
 
 ## Clean Up
 
-This LLM on GKE experiment will be expensive so once you are done, you will want to delete it. You can do this simply by running the following command. 
+To tear down the GKE cluster, Axion node pool, Hyperdisk storage, and Artifact Registry resources when finished:
 
 ```bash
 pulumi destroy
 ```
-
-choose `Y` to destroy and in about 15-30 minutes, everything will be removed. 
-
-## FUTURE TODOS
-- Pulumi ESC

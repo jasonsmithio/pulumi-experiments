@@ -11,7 +11,7 @@ spec:
     metadata:
       labels:
         app: gemma-server
-        ai.gke.io/model: gemma-3-4b-it
+        ai.gke.io/model: gemma-4-4b-it
         ai.gke.io/inference-server: vllm
         examples.ai.gke.io/source: user-guide
     spec:
@@ -39,7 +39,7 @@ spec:
         - --max-num-seqs=4
         env:
         - name: MODEL_ID
-          value: google/gemma-3-4b-it
+          value: google/gemma-4-4b-it
         - name: HUGGING_FACE_HUB_TOKEN
           valueFrom:
             secretKeyRef:
