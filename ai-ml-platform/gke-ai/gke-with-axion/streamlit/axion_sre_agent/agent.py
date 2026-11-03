@@ -1,4 +1,4 @@
-"""Google ADK (Agent Development Kit) definition and runner for the GKE SRE & FinOps Agent on Axion."""
+"""Google ADK (Agent Development Kit) definition and runner for the GKE SRE & FinOps Agent on Axion with vLLM."""
 
 from __future__ import annotations
 
@@ -17,45 +17,43 @@ from .tools import (
     inspect_namespace_workloads,
 )
 
-DEFAULT_OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://ollama-service:11434/v1")
-DEFAULT_OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma4:4b-highthread")
+DEFAULT_VLLM_BASE_URL = (
+    os.environ.get("VLLM_BASE_URL")
+    or os.environ.get("OLLAMA_BASE_URL")
+    or "http://vllm-service:8000/v1"
+)
+DEFAULT_VLLM_MODEL = (
+    os.environ.get("VLLM_MODEL")
+    or os.environ.get("OLLAMA_MODEL")
+    or "google/gemma-4-4b-it"
+)
 MACHINE_TYPE = os.environ.get("AXION_MACHINE_TYPE", "c4a-standard-16")
 
-SYSTEM_INSTRUCTION = f"""You are the **GKE Axion SRE & FinOps Agent**, an autonomous Kubernetes platform engineering agent running in-cluster on **Google Axion (`{MACHINE_TYPE}`, Arm Neoverse V2)** powered by **Gemma 4** (`gemma4:4b-highthread`, 14 CPU threads) and **Google ADK (Agent Development Kit)**.
+SYSTEM_INSTRUCTION = f"""You are the **GKE Axion SRE & FinOps Agent**, an autonomous Kubernetes platform engineering agent running in-cluster on **Google Axion (`{MACHINE_TYPE}`, Arm Neoverse V2)** powered by **Gemma 4 (`google/gemma-4-4b-it`)** served on **vLLM Arm64 CPU (`OMP_NUM_THREADS=14`, `VLLM_CPU_KVCACHE_SPACE=16`, `--dtype=bfloat16`)** and **Google ADK (Agent Development Kit)**.
 
 Your responsibilities:
 1. **Cluster & Node Inspection**: Always call `inspect_gke_axion_nodes` when asked about GKE nodes, Arm64 architecture, C4A machine shapes, or CPU/memory capacity.
-2. **Workload & Storage Diagnostics**: Always call `inspect_namespace_workloads` when asked about running pods (`ollama-0`, `streamlit-gemma4-ui`), CPU/memory limits, or `hyperdisk-balanced` PVCs (`30Gi`).
+2. **Workload & Storage Diagnostics**: Always call `inspect_namespace_workloads` when asked about running pods (`vllm-gemma4-0`, `streamlit-gemma4-ui`), vLLM CPU/memory limits, or `hyperdisk-balanced` PVCs (`30Gi` mounted at `/root/.cache/huggingface`).
 3. **FinOps & TCO Analysis**: Always call `calculate_axion_vs_gpu_finops` when asked about cost, TCO, GPU vs. CPU trade-offs, price-performance (+65% vs x86), or energy efficiency (+60% vs x86).
-4. **Manifest & Thread Tuning**: Always call `audit_and_generate_axion_manifest` when asked to generate or tune Kubernetes manifests, `Modelfile` configs, or `PARAMETER num_thread` settings for C4A VMs.
+4. **Manifest & vLLM Thread Tuning**: Always call `audit_and_generate_axion_manifest` when asked to generate or tune Kubernetes manifests, vLLM CPU flags, `OMP_NUM_THREADS`, `VLLM_CPU_OMP_THREADS_BIND`, or `VLLM_CPU_KVCACHE_SPACE` settings for C4A VMs.
 
 Provide concise, technical, markdown-formatted responses grounded in the exact data returned by your tools."""
 
 
-def _normalize_ollama_api_base(base_url: str) -> str:
-    """Strips trailing /v1 from an OpenAI-style Ollama URL so LiteLLM's ollama_chat provider gets the root base URL."""
-    cleaned = base_url.rstrip("/")
-    if cleaned.endswith("/v1"):
-        cleaned = cleaned[:-3]
-    return cleaned
-
-
-def build_adk_agent(model_name: str = DEFAULT_OLLAMA_MODEL, base_url: str = DEFAULT_OLLAMA_BASE_URL):
-    """Builds a Google ADK Agent backed by LiteLLM's ollama_chat provider."""
+def build_adk_agent(model_name: str = DEFAULT_VLLM_MODEL, base_url: str = DEFAULT_VLLM_BASE_URL):
+    """Builds a Google ADK Agent backed by LiteLLM's OpenAI provider pointing at the in-cluster vLLM server."""
     from google.adk.agents import Agent
     from google.adk.models.lite_llm import LiteLlm
-
-    ollama_root_url = _normalize_ollama_api_base(base_url)
-    os.environ["OLLAMA_API_BASE"] = ollama_root_url
 
     return Agent(
         name="gke_axion_sre_finops_agent",
         model=LiteLlm(
-            model=f"ollama_chat/{model_name}",
-            api_base=ollama_root_url,
+            model=f"openai/{model_name}",
+            api_base=base_url,
+            api_key=os.environ.get("OPENAI_API_KEY", "EMPTY"),
         ),
         description=(
-            "Autonomous GKE SRE & FinOps Agent running on Google Axion (C4A) Arm64 processors with Gemma 4."
+            "Autonomous GKE SRE & FinOps Agent running on Google Axion (C4A) Arm64 processors with vLLM and Gemma 4."
         ),
         instruction=SYSTEM_INSTRUCTION,
         tools=AGENT_TOOLS,
@@ -89,7 +87,7 @@ OPENAI_TOOL_SCHEMAS = [
         "function": {
             "name": "inspect_namespace_workloads",
             "description": (
-                "Inspects running pods, StatefulSets, CPU/memory requests, and Hyperdisk PVCs in a GKE namespace."
+                "Inspects running pods, vLLM StatefulSets, CPU/memory requests, and Hyperdisk PVCs in a GKE namespace."
             ),
             "parameters": {
                 "type": "object",
@@ -119,7 +117,7 @@ OPENAI_TOOL_SCHEMAS = [
                     },
                     "replicas": {
                         "type": "integer",
-                        "description": "Number of high-availability GKE inference replicas (defaults to 2).",
+                        "description": "Number of high-availability GKE vLLM inference replicas (defaults to 2).",
                     },
                     "daily_agent_turns": {
                         "type": "integer",
@@ -135,7 +133,7 @@ OPENAI_TOOL_SCHEMAS = [
         "function": {
             "name": "audit_and_generate_axion_manifest",
             "description": (
-                "Generates an Arm64 GKE StatefulSet manifest and tuned Ollama Modelfile for a target Axion C4A machine size."
+                "Generates an Arm64 GKE vLLM StatefulSet manifest and CPU thread/KV-cache profile for a target Axion C4A machine size."
             ),
             "parameters": {
                 "type": "object",
@@ -146,7 +144,7 @@ OPENAI_TOOL_SCHEMAS = [
                     },
                     "model_tag": {
                         "type": "string",
-                        "description": "Target Ollama model tag (e.g., 'gemma4:4b-highthread').",
+                        "description": "Target HuggingFace model ID (e.g., 'google/gemma-4-4b-it').",
                     },
                     "vcpu_count": {
                         "type": "integer",
@@ -231,12 +229,12 @@ async def _run_adk_async(prompt: str, model_name: str, base_url: str) -> Dict[st
         "tool_calls": tool_traces,
         "tokens_per_sec": round(approx_tokens / elapsed, 2),
         "elapsed_sec": round(elapsed, 2),
-        "engine": "Google ADK (InMemoryRunner + LiteLLM/Ollama)",
+        "engine": "Google ADK (InMemoryRunner + LiteLLM/vLLM)",
     }
 
 
 def _infer_fallback_tools_from_prompt(prompt: str) -> List[Dict[str, Any]]:
-    """If a model or endpoint skips native tool-call JSON framing, deterministically invoke relevant SRE/FinOps tools."""
+    """If an endpoint skips native tool-call JSON framing, deterministically invoke matching SRE/FinOps tools."""
     lower = prompt.lower()
     invoked: List[Dict[str, Any]] = []
 
@@ -251,7 +249,7 @@ def _infer_fallback_tools_from_prompt(prompt: str) -> List[Dict[str, Any]]:
                 "duration_ms": round((time.time() - t0) * 1000, 1),
             }
         )
-    if any(k in lower for k in ["pod", "workload", "ollama", "pvc", "hyperdisk", "audit", "health", "thread"]):
+    if any(k in lower for k in ["pod", "workload", "vllm", "pvc", "hyperdisk", "audit", "health", "thread"]):
         t0 = time.time()
         res = inspect_namespace_workloads(namespace="default")
         invoked.append(
@@ -273,12 +271,12 @@ def _infer_fallback_tools_from_prompt(prompt: str) -> List[Dict[str, Any]]:
                 "duration_ms": round((time.time() - t0) * 1000, 1),
             }
         )
-    if any(k in lower for k in ["manifest", "yaml", "modelfile", "num_thread", "thread", "c4a-standard-32", "generate"]):
+    if any(k in lower for k in ["manifest", "yaml", "omp_num_threads", "kvcache", "thread", "c4a-standard-32", "generate"]):
         vcpus = 32 if "32" in lower else (48 if "48" in lower else (8 if "standard-8" in lower else 16))
         t0 = time.time()
         res = audit_and_generate_axion_manifest(
-            workload_name="gemma4-agent-inference",
-            model_tag=DEFAULT_OLLAMA_MODEL,
+            workload_name="vllm-gemma4",
+            model_tag=DEFAULT_VLLM_MODEL,
             vcpu_count=vcpus,
             hyperdisk_size_gi=30,
         )
@@ -286,8 +284,8 @@ def _infer_fallback_tools_from_prompt(prompt: str) -> List[Dict[str, Any]]:
             {
                 "name": "audit_and_generate_axion_manifest",
                 "args": {
-                    "workload_name": "gemma4-agent-inference",
-                    "model_tag": DEFAULT_OLLAMA_MODEL,
+                    "workload_name": "vllm-gemma4",
+                    "model_tag": DEFAULT_VLLM_MODEL,
                     "vcpu_count": vcpus,
                     "hyperdisk_size_gi": 30,
                 },
@@ -301,10 +299,10 @@ def _infer_fallback_tools_from_prompt(prompt: str) -> List[Dict[str, Any]]:
 def execute_agent_turn(
     prompt: str,
     chat_history: Optional[List[Dict[str, str]]] = None,
-    model_name: str = DEFAULT_OLLAMA_MODEL,
-    base_url: str = DEFAULT_OLLAMA_BASE_URL,
+    model_name: str = DEFAULT_VLLM_MODEL,
+    base_url: str = DEFAULT_VLLM_BASE_URL,
 ) -> Dict[str, Any]:
-    """Executes an agentic turn using Google ADK first, with an OpenAI-compatible tool-calling fallback."""
+    """Executes an agentic turn using Google ADK first, with an OpenAI-compatible vLLM tool-calling fallback."""
     # 1. Try Google ADK InMemoryRunner first
     try:
         adk_result = asyncio.run(_run_adk_async(prompt=prompt, model_name=model_name, base_url=base_url))
@@ -313,10 +311,10 @@ def execute_agent_turn(
     except Exception:
         pass
 
-    # 2. Fallback: OpenAI-compatible tool-calling loop against Ollama `/v1`
+    # 2. Fallback: OpenAI-compatible tool-calling loop against vLLM `/v1`
     from openai import OpenAI
 
-    client = OpenAI(base_url=base_url, api_key=os.environ.get("OPENAI_API_KEY", "no-key"))
+    client = OpenAI(base_url=base_url, api_key=os.environ.get("OPENAI_API_KEY", "EMPTY"))
     messages: List[Dict[str, Any]] = [{"role": "system", "content": SYSTEM_INSTRUCTION}]
     for msg in chat_history or []:
         if msg.get("role") in ("user", "assistant") and msg.get("content"):
@@ -371,7 +369,6 @@ def execute_agent_turn(
                     }
                 )
         else:
-            # If the endpoint did not emit structured tool_calls, run matching ADK tools and inject their telemetry
             inferred_traces = _infer_fallback_tools_from_prompt(prompt)
             if inferred_traces:
                 tool_traces.extend(inferred_traces)
@@ -393,7 +390,7 @@ def execute_agent_turn(
                     "tool_calls": [],
                     "tokens_per_sec": round(approx_tokens / elapsed, 2),
                     "elapsed_sec": round(elapsed, 2),
-                    "engine": "Google ADK Tools + Ollama OpenAI API",
+                    "engine": "Google ADK Tools + vLLM OpenAI API",
                 }
 
         gen_start = time.time()
@@ -414,12 +411,11 @@ def execute_agent_turn(
             "tool_calls": tool_traces,
             "tokens_per_sec": round(completion_tokens / gen_elapsed, 2),
             "elapsed_sec": round(total_elapsed, 2),
-            "engine": "Google ADK Tools + Ollama OpenAI API",
+            "engine": "Google ADK Tools + vLLM OpenAI API",
         }
     except Exception as exc:
-        # Offline/booth preview fallback: still run the real ADK tools so booth staff can demo tool output even before Ollama finishes pulling
         inferred_traces = _infer_fallback_tools_from_prompt(prompt)
         raise RuntimeError(
-            f"Could not reach Ollama endpoint at `{base_url}` ({exc}). "
+            f"Could not reach vLLM endpoint at `{base_url}` ({exc}). "
             f"Executed {len(inferred_traces)} local ADK tool(s): {[t['name'] for t in inferred_traces]}"
         ) from exc

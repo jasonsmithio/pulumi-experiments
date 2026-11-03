@@ -1,3 +1,4 @@
+# Arm64 Google Axion (C4A) vLLM Deployment for Gemma 4 4B IT (google/gemma-4-4b-it)
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -15,46 +16,61 @@ spec:
         ai.gke.io/inference-server: vllm
         examples.ai.gke.io/source: user-guide
     spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/arch
+                operator: In
+                values:
+                - arm64
+      nodeSelector:
+        cloud.google.com/gke-nodepool: "axion-nodepool"
       containers:
       - name: inference-server
-        image: us-docker.pkg.dev/vertex-ai/vertex-vision-model-garden-dockers/pytorch-vllm-serve:20250312_0916_RC01
+        image: public.ecr.aws/q9t5s3a7/vllm-cpu-release-repo:latest
         resources:
           requests:
-            cpu: "2"
-            memory: "20Gi"
-            ephemeral-storage: "20Gi"
-            nvidia.com/gpu: "1"
+            cpu: "12"
+            memory: "24Gi"
           limits:
-            cpu: "2"
-            memory: "20Gi"
-            ephemeral-storage: "20Gi"
-            nvidia.com/gpu: "1"
+            cpu: "15"
+            memory: "40Gi"
         command: ["python3", "-m", "vllm.entrypoints.openai.api_server"]
         args:
         - --model=$(MODEL_ID)
-        - --tensor-parallel-size=1
+        - --dtype=bfloat16
         - --host=0.0.0.0
         - --port=8000
-        - --max-model-len=32768
-        - --max-num-seqs=4
+        - --max-model-len=8192
+        - --max-num-seqs=8
+        - --enable-auto-tool-choice
+        - --tool-call-parser=pythonic
         env:
         - name: MODEL_ID
           value: google/gemma-4-4b-it
+        - name: VLLM_TARGET_DEVICE
+          value: "cpu"
+        - name: OMP_NUM_THREADS
+          value: "14"
+        - name: VLLM_CPU_OMP_THREADS_BIND
+          value: "0-13"
+        - name: VLLM_CPU_KVCACHE_SPACE
+          value: "16"
         - name: HUGGING_FACE_HUB_TOKEN
           valueFrom:
             secretKeyRef:
               name: hf-secret
               key: hf_api_token
+              optional: true
         volumeMounts:
         - mountPath: /dev/shm
           name: dshm
       volumes:
       - name: dshm
         emptyDir:
-            medium: Memory
-      nodeSelector:
-        cloud.google.com/gke-accelerator: nvidia-l4
-        cloud.google.com/gke-gpu-driver-version: latest
+          medium: Memory
 ---
 apiVersion: v1
 kind: Service

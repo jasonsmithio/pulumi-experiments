@@ -1,4 +1,4 @@
-"""Tools for the GKE SRE & FinOps Agent running on Google Axion (C4A) with Gemma 4."""
+"""Tools for the GKE SRE & FinOps Agent running on Google Axion (C4A) with vLLM and Gemma 4."""
 
 from __future__ import annotations
 
@@ -77,20 +77,20 @@ def inspect_gke_axion_nodes() -> Dict[str, Any]:
             {
                 "name": "gke-axion-cluster-axion-nodepool-8f92a1c4-01",
                 "arch": "arm64",
-                "cpu_microarchitecture": "Google Axion (Arm Neoverse V2 + Titanium Offloads)",
+                "cpu_microarchitecture": "Google Axion (Arm Neoverse V2 + Titanium Offloads + Arm KleidiAI)",
                 "machine_type": machine_type,
                 "nodepool": "axion-nodepool",
                 "zone": "us-central1-a",
                 "vcpu_capacity": 16,
-                "vcpu_allocatable": "15.89 vCPUs (14 threads assigned to Gemma 4, ~2 reserved for kubelet/OS)",
-                "memory_capacity": "64 GiB DDR5",
+                "vcpu_allocatable": "15.89 vCPUs (14 threads pinned to vLLM OpenMP/KleidiAI, ~2 reserved for kubelet & FastAPI)",
+                "memory_capacity": "64 GiB DDR5 (16 GiB allocated to vLLM PagedAttention KV Cache)",
                 "boot_disk": "50 GiB hyperdisk-balanced",
                 "ready": True,
             },
             {
                 "name": "gke-axion-cluster-axion-nodepool-8f92a1c4-02",
                 "arch": "arm64",
-                "cpu_microarchitecture": "Google Axion (Arm Neoverse V2 + Titanium Offloads)",
+                "cpu_microarchitecture": "Google Axion (Arm Neoverse V2 + Titanium Offloads + Arm KleidiAI)",
                 "machine_type": machine_type,
                 "nodepool": "axion-nodepool",
                 "zone": "us-central1-a",
@@ -105,16 +105,16 @@ def inspect_gke_axion_nodes() -> Dict[str, Any]:
 
 
 def inspect_namespace_workloads(namespace: str = "default") -> Dict[str, Any]:
-    """Inspects running pods, StatefulSets, CPU/memory requests, and Hyperdisk PVCs in a GKE namespace.
+    """Inspects running pods, vLLM StatefulSets, CPU/memory requests, and Hyperdisk PVCs in a GKE namespace.
 
-    Use this tool when the user asks about running pods, the Ollama StatefulSet, Gemma 4 model serving status,
+    Use this tool when the user asks about running pods, the vLLM StatefulSet, Gemma 4 model serving status,
     Hyperdisk Balanced persistent volume claims, or workload health in a namespace.
 
     Args:
         namespace: The Kubernetes namespace to inspect (defaults to "default").
 
     Returns:
-        dict: Pod statuses, resource requests/limits, model configuration, and PVC bindings.
+        dict: Pod statuses, resource requests/limits, vLLM configuration, and PVC bindings.
     """
     core_v1, _ = _load_k8s_client()
     if core_v1 is not None:
@@ -170,20 +170,29 @@ def inspect_namespace_workloads(namespace: str = "default") -> Dict[str, Any]:
         "namespace": namespace,
         "pods": [
             {
-                "name": "ollama-0",
-                "workload_kind": "StatefulSet/ollama",
+                "name": "vllm-gemma4-0",
+                "workload_kind": "StatefulSet/vllm-gemma4",
                 "phase": "Running",
                 "arch_affinity": "kubernetes.io/arch=arm64",
                 "nodepool": "axion-nodepool",
-                "loaded_models": ["gemma4:4b-highthread (PARAMETER num_thread 14)", "gemma4:4b"],
+                "inference_engine": "vLLM Arm64 CPU (BF16 + Arm KleidiAI + PagedAttention)",
+                "served_model": "google/gemma-4-4b-it",
+                "vllm_tuning_env": {
+                    "VLLM_TARGET_DEVICE": "cpu",
+                    "OMP_NUM_THREADS": "14",
+                    "VLLM_CPU_OMP_THREADS_BIND": "0-13",
+                    "VLLM_CPU_KVCACHE_SPACE": "16 (GiB DDR5)",
+                    "dtype": "bfloat16",
+                    "tool_call_parser": "pythonic (--enable-auto-tool-choice)",
+                },
                 "containers": [
                     {
-                        "name": "ollama",
-                        "image": "ollama/ollama:latest",
+                        "name": "vllm-cpu",
+                        "image": "public.ecr.aws/q9t5s3a7/vllm-cpu-release-repo:latest",
                         "cpu_request": "12",
                         "cpu_limit": "15",
-                        "memory_request": "16Gi",
-                        "memory_limit": "32Gi",
+                        "memory_request": "24Gi",
+                        "memory_limit": "40Gi",
                     }
                 ],
             },
@@ -193,7 +202,7 @@ def inspect_namespace_workloads(namespace: str = "default") -> Dict[str, Any]:
                 "phase": "Running",
                 "arch_affinity": "kubernetes.io/arch=arm64",
                 "nodepool": "axion-nodepool",
-                "agent_framework": "Google ADK (Agent Development Kit) + LiteLLM/Ollama",
+                "agent_framework": "Google ADK (Agent Development Kit) + LiteLLM -> vLLM OpenAI API (:8000/v1)",
                 "containers": [
                     {
                         "name": "streamlit",
@@ -208,7 +217,8 @@ def inspect_namespace_workloads(namespace: str = "default") -> Dict[str, Any]:
         ],
         "persistent_volume_claims": [
             {
-                "name": "ollama-models-pvc-ollama-0",
+                "name": "hf-cache-pvc-vllm-gemma4-0",
+                "mount_path": "/root/.cache/huggingface",
                 "status": "Bound",
                 "storage_class": "hyperdisk-arm (pd.csi.storage.gke.io / hyperdisk-balanced)",
                 "capacity": "30Gi",
@@ -225,11 +235,11 @@ def calculate_axion_vs_gpu_finops(
     """Calculates FinOps TCO, monthly infrastructure cost, and price-performance of Google Axion C4A vs. x86 and GPU nodes.
 
     Use this tool when the user asks about cost, FinOps, TCO, price-performance, energy efficiency,
-    or comparing Google Axion (`c4a-standard-16`) against x86 VMs or GPUs for running Gemma 4 agents.
+    or comparing Google Axion (`c4a-standard-16`) against x86 VMs or GPUs for running vLLM + Gemma 4 agents.
 
     Args:
         model_size_billions: Model parameter count in billions (e.g., 4.0 for Gemma 4 4B).
-        replicas: Number of high-availability GKE inference replicas (defaults to 2).
+        replicas: Number of high-availability GKE vLLM inference replicas (defaults to 2).
         daily_agent_turns: Estimated number of agent tool-calling turns per day (defaults to 10000).
 
     Returns:
@@ -250,7 +260,7 @@ def calculate_axion_vs_gpu_finops(
 
     return {
         "workload_profile": {
-            "model": f"Gemma 4 ({model_size_billions:g}B parameters, Q4_K_M / Ollama)",
+            "model": f"google/gemma-4-{int(model_size_billions)}b-it (vLLM BF16 + PagedAttention)",
             "replicas": replicas,
             "daily_agent_turns": daily_agent_turns,
             "monthly_agent_turns": monthly_turns,
@@ -283,57 +293,59 @@ def calculate_axion_vs_gpu_finops(
             "savings_vs_gpu_percent": f"{round(((gpu_total - c4a_total) / gpu_total) * 100, 1)}%",
             "monthly_savings_vs_x86_usd": round(x86_total - c4a_total, 2),
             "recommendation": (
-                "Use Google Axion c4a-standard-16 with Gemma 4 (num_thread 14) for always-on GKE agents "
-                "and reserve scarce GPU quota for >27B frontier models or high-batch training."
+                "Use Google Axion c4a-standard-16 with vLLM (OMP_NUM_THREADS=14, VLLM_CPU_KVCACHE_SPACE=16) "
+                "for always-on GKE agents and reserve scarce GPU quota for >27B frontier models."
             ),
         },
     }
 
 
 def audit_and_generate_axion_manifest(
-    workload_name: str = "gemma4-agent-inference",
-    model_tag: str = "gemma4:4b-highthread",
+    workload_name: str = "vllm-gemma4",
+    model_tag: str = "google/gemma-4-4b-it",
     vcpu_count: int = 16,
     hyperdisk_size_gi: int = 30,
 ) -> Dict[str, Any]:
-    """Generates an Arm64 GKE StatefulSet manifest and tuned Ollama Modelfile for a target Axion C4A machine size.
+    """Generates an Arm64 GKE vLLM StatefulSet manifest and CPU thread/KV-cache profile for a target Axion C4A machine size.
 
-    Use this tool when the user asks to generate, tune, or audit a Kubernetes YAML manifest, Modelfile,
-    or thread configuration (`PARAMETER num_thread`) for running Gemma 4 on Google Axion C4A nodes.
+    Use this tool when the user asks to generate, tune, or audit a Kubernetes YAML manifest, vLLM CPU flags,
+    or thread configuration (`OMP_NUM_THREADS` / `VLLM_CPU_OMP_THREADS_BIND`) for running Gemma 4 on Google Axion C4A nodes.
 
     Args:
         workload_name: Name of the Kubernetes StatefulSet/Service to generate.
-        model_tag: Target Ollama model tag (e.g., "gemma4:4b-highthread").
+        model_tag: Target HuggingFace model ID (e.g., "google/gemma-4-4b-it").
         vcpu_count: Total vCPUs on the target C4A VM (e.g., 8, 16, 32, 48, 64, 72).
         hyperdisk_size_gi: Size of the Hyperdisk Balanced PVC in GiB (defaults to 30).
 
     Returns:
-        dict: Recommended C4A machine type, optimal `num_thread` value, Modelfile, and Kubernetes YAML snippet.
+        dict: Recommended C4A machine type, optimal `OMP_NUM_THREADS` and `VLLM_CPU_KVCACHE_SPACE`, and Kubernetes YAML.
     """
     valid_vcpus = [4, 8, 16, 32, 48, 64, 72]
     chosen_vcpu = min(valid_vcpus, key=lambda x: abs(x - int(vcpu_count)))
     machine_type = f"c4a-standard-{chosen_vcpu}"
     reserved_system_vcpus = 2 if chosen_vcpu >= 8 else 1
     optimal_threads = max(1, chosen_vcpu - reserved_system_vcpus)
+    thread_bind = f"0-{optimal_threads - 1}"
     container_cpu_limit = max(1, chosen_vcpu - 1)
     container_cpu_request = max(1, chosen_vcpu - 4)
     memory_gb = chosen_vcpu * 4
+    kvcache_space_gb = max(4, memory_gb // 4)
 
-    modelfile_content = (
-        f"FROM gemma4:4b\n"
-        f"PARAMETER temperature 0.2\n"
-        f"PARAMETER top_k 64\n"
-        f"PARAMETER top_p 0.95\n"
-        f"PARAMETER num_thread {optimal_threads}\n"
-        f"PARAMETER stop <end_of_turn>\n"
-    )
+    vllm_env_profile = {
+        "MODEL_ID": model_tag,
+        "VLLM_TARGET_DEVICE": "cpu",
+        "OMP_NUM_THREADS": str(optimal_threads),
+        "VLLM_CPU_OMP_THREADS_BIND": thread_bind,
+        "VLLM_CPU_KVCACHE_SPACE": str(kvcache_space_gb),
+        "CLI_FLAGS": "--dtype=bfloat16 --max-model-len=8192 --enable-auto-tool-choice --tool-call-parser=pythonic",
+    }
 
     k8s_yaml = f"""apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: {workload_name}
 spec:
-  serviceName: {workload_name}-svc
+  serviceName: vllm-service
   replicas: 1
   selector:
     matchLabels:
@@ -342,27 +354,48 @@ spec:
     metadata:
       labels:
         app: {workload_name}
-        ai.gke.io/model: gemma-4-4b
+        ai.gke.io/model: gemma-4-4b-it
+        ai.gke.io/inference-server: vllm
     spec:
       nodeSelector:
         kubernetes.io/arch: arm64
         cloud.google.com/gke-nodepool: axion-nodepool
       containers:
-        - name: ollama
-          image: ollama/ollama:latest
+        - name: vllm-cpu
+          image: public.ecr.aws/q9t5s3a7/vllm-cpu-release-repo:latest
+          command: ["python3", "-m", "vllm.entrypoints.openai.api_server"]
+          args:
+            - "--model={model_tag}"
+            - "--dtype=bfloat16"
+            - "--host=0.0.0.0"
+            - "--port=8000"
+            - "--max-model-len=8192"
+            - "--enable-auto-tool-choice"
+            - "--tool-call-parser=pythonic"
+          env:
+            - name: VLLM_TARGET_DEVICE
+              value: "cpu"
+            - name: OMP_NUM_THREADS
+              value: "{optimal_threads}"
+            - name: VLLM_CPU_OMP_THREADS_BIND
+              value: "{thread_bind}"
+            - name: VLLM_CPU_KVCACHE_SPACE
+              value: "{kvcache_space_gb}"
+            - name: HF_HOME
+              value: "/root/.cache/huggingface"
           resources:
             requests:
               cpu: "{container_cpu_request}"
-              memory: "{max(8, memory_gb // 4)}Gi"
+              memory: "{max(12, memory_gb // 3)}Gi"
             limits:
               cpu: "{container_cpu_limit}"
-              memory: "{max(16, memory_gb // 2)}Gi"
+              memory: "{max(20, (memory_gb * 2) // 3)}Gi"
           volumeMounts:
-            - name: models-pvc
-              mountPath: /root/.ollama
+            - name: hf-cache-pvc
+              mountPath: /root/.cache/huggingface
   volumeClaimTemplates:
     - metadata:
-        name: models-pvc
+        name: hf-cache-pvc
       spec:
         accessModes: ["ReadWriteOnce"]
         storageClassName: hyperdisk-arm
@@ -374,14 +407,17 @@ spec:
         "target_machine_type": machine_type,
         "total_vcpus": chosen_vcpu,
         "total_memory_gib": memory_gb,
-        "recommended_num_thread": optimal_threads,
+        "recommended_omp_num_threads": optimal_threads,
+        "recommended_omp_threads_bind": thread_bind,
+        "recommended_kvcache_space_gib": kvcache_space_gb,
         "reserved_kubelet_os_vcpus": reserved_system_vcpus,
         "tuning_rationale": (
-            f"Setting PARAMETER num_thread {optimal_threads} on {machine_type} ({chosen_vcpu} Arm Neoverse V2 vCPUs) "
-            f"saturates {optimal_threads} cores with Arm Kleidi AI matrix kernels while reserving "
-            f"{reserved_system_vcpus} vCPUs for GKE kubelet, Pod readiness probes, and Titanium network/storage I/O."
+            f"Setting OMP_NUM_THREADS={optimal_threads} (VLLM_CPU_OMP_THREADS_BIND='{thread_bind}') and "
+            f"VLLM_CPU_KVCACHE_SPACE={kvcache_space_gb} on {machine_type} ({chosen_vcpu} Arm Neoverse V2 vCPUs) "
+            f"pins {optimal_threads} cores to vLLM's Arm KleidiAI BF16 kernels while reserving "
+            f"{reserved_system_vcpus} vCPUs for GKE kubelet, vLLM's async FastAPI loop, and Titanium I/O."
         ),
-        "modelfile": modelfile_content,
+        "vllm_env_profile": vllm_env_profile,
         "kubernetes_statefulset_yaml": k8s_yaml,
     }
 

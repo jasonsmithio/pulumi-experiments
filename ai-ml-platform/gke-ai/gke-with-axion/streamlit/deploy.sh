@@ -2,11 +2,11 @@
 set -euo pipefail
 
 AR_REPO="${AR_REPO:-streamlit}"
-SERVICE_NAME="${SERVICE_NAME:-axion-inference-app}"
+SERVICE_NAME="${SERVICE_NAME:-axion-gemma4-ui}"
 GOOGLE_CLOUD_REGION="${GOOGLE_CLOUD_REGION:-us-central1}"
 GOOGLE_CLOUD_PROJECT="${GOOGLE_CLOUD_PROJECT:-$(gcloud config get-value project)}"
-OLLAMA_BASE_URL="${OLLAMA_BASE_URL:-http://ollama-service:11434/v1}"
-OLLAMA_MODEL="${OLLAMA_MODEL:-gemma4:4b-highthread}"
+VLLM_BASE_URL="${VLLM_BASE_URL:-http://vllm-service:8000/v1}"
+VLLM_MODEL="${VLLM_MODEL:-google/gemma-4-4b-it}"
 
 IMAGE_URI="${GOOGLE_CLOUD_REGION}-docker.pkg.dev/${GOOGLE_CLOUD_PROJECT}/${AR_REPO}/${SERVICE_NAME}:latest"
 

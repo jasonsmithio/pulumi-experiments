@@ -1,0 +1,145 @@
+# Kubernetes Manifest for deploying vLLM + Gemma 4 (google/gemma-4-4b-it) on GKE with Google Axion (C4A) Processors
+# - StatefulSet (vllm-gemma4): Runs vLLM's Arm64 CPU OpenAI server on C4A nodes (kubernetes.io/arch: arm64)
+#   with a 30Gi Hyperdisk Balanced PVC mounted at /root/.cache/huggingface.
+# - Tuned for c4a-standard-16 (16 Arm Neoverse V2 vCPUs, 64 GB DDR5 RAM):
+#   * OMP_NUM_THREADS=14 & VLLM_CPU_OMP_THREADS_BIND="0-13" (saturates 14 cores with Arm KleidiAI BF16 kernels,
+#     reserving 2 vCPUs for GKE kubelet and vLLM's async FastAPI HTTP server)
+#   * VLLM_CPU_KVCACHE_SPACE=16 (allocates 16 GiB of DDR5 memory for PagedAttention KV cache)
+#   * --dtype=bfloat16 & --enable-auto-tool-choice (native tool calling for Google ADK agents)
+# - Service (vllm-service): Exposes the vLLM OpenAI-compatible API in-cluster on port 8000.
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: vllm-gemma4
+  namespace: default
+spec:
+  serviceName: "vllm-service"
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm-gemma4
+  template:
+    metadata:
+      labels:
+        app: vllm-gemma4
+        ai.gke.io/model: gemma-4-4b-it
+        ai.gke.io/inference-server: vllm
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/arch
+                operator: In
+                values:
+                - arm64
+      nodeSelector:
+        cloud.google.com/gke-nodepool: "axion-nodepool"
+      containers:
+        - name: vllm-cpu
+          image: public.ecr.aws/q9t5s3a7/vllm-cpu-release-repo:latest
+          command: ["python3", "-m", "vllm.entrypoints.openai.api_server"]
+          args:
+            - "--model=$(MODEL_ID)"
+            - "--dtype=bfloat16"
+            - "--host=0.0.0.0"
+            - "--port=8000"
+            - "--max-model-len=8192"
+            - "--max-num-seqs=8"
+            - "--enable-auto-tool-choice"
+            - "--tool-call-parser=pythonic"
+          ports:
+            - containerPort: 8000
+              name: http-openai
+          env:
+            - name: MODEL_ID
+              value: "google/gemma-4-4b-it"
+            - name: VLLM_TARGET_DEVICE
+              value: "cpu"
+            - name: OMP_NUM_THREADS
+              value: "14"
+            - name: VLLM_CPU_OMP_THREADS_BIND
+              value: "0-13"
+            - name: VLLM_CPU_KVCACHE_SPACE
+              value: "16"
+            - name: HF_HOME
+              value: "/root/.cache/huggingface"
+            - name: HUGGING_FACE_HUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-secret
+                  key: hf_api_token
+                  optional: true
+          volumeMounts:
+            - name: hf-cache-pvc
+              mountPath: /root/.cache/huggingface
+            - name: dshm
+              mountPath: /dev/shm
+          # Sized for c4a-standard-16 (16 Arm Neoverse V2 vCPUs, 64 GB DDR5 RAM):
+          # Allocates up to 15 vCPUs so OMP_NUM_THREADS=14 saturates 14 cores
+          # while leaving 2 vCPUs for GKE kubelet, FastAPI, and system pods.
+          resources:
+            requests:
+              cpu: "12"
+              memory: "24Gi"
+            limits:
+              cpu: "15"
+              memory: "40Gi"
+      volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+  volumeClaimTemplates:
+    - metadata:
+        name: hf-cache-pvc
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        storageClassName: "hyperdisk-arm"
+        resources:
+          requests:
+            storage: 30Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-service
+  namespace: default
+spec:
+  selector:
+    app: vllm-gemma4
+  type: ClusterIP
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: axion-gemma4-gateway
+  namespace: default
+spec:
+  gatewayClassName: gke-l7-global-external-managed
+  listeners:
+  - protocol: HTTP
+    port: 8000
+    name: http
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: axion-gemma4-route
+  namespace: default
+spec:
+  parentRefs:
+  - name: axion-gemma4-gateway
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: vllm-service
+      port: 8000

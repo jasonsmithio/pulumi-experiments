@@ -6,8 +6,8 @@ import streamlit as st
 from openai import OpenAI
 
 from axion_sre_agent.agent import (
-    DEFAULT_OLLAMA_BASE_URL,
-    DEFAULT_OLLAMA_MODEL,
+    DEFAULT_VLLM_BASE_URL,
+    DEFAULT_VLLM_MODEL,
     MACHINE_TYPE,
     execute_agent_turn,
     _infer_fallback_tools_from_prompt,
@@ -15,7 +15,7 @@ from axion_sre_agent.agent import (
 from axion_sre_agent.tools import AGENT_TOOLS
 
 st.set_page_config(
-    page_title="GKE SRE & FinOps Agent • Gemma 4 on Google Axion",
+    page_title="GKE SRE & FinOps Agent • vLLM + Gemma 4 on Google Axion",
     page_icon="🤖",
     layout="wide",
 )
@@ -26,50 +26,50 @@ if css_path.exists():
 
 st.title(f"🤖 GKE SRE & FinOps Agent on Google Axion ({MACHINE_TYPE})")
 st.caption(
-    "Powered by **Google ADK (Agent Development Kit)** • **Gemma 4 (`gemma4:4b-highthread`, 14 CPU threads)** "
-    "• **Arm Neoverse V2 (C4A)** • **Hyperdisk Balanced (30Gi)**"
+    "Powered by **Google ADK (Agent Development Kit)** • **vLLM Arm64 CPU (`OMP_NUM_THREADS=14`, `VLLM_CPU_KVCACHE_SPACE=16`)** "
+    "• **Gemma 4 (`google/gemma-4-4b-it`, BF16)** • **Arm Neoverse V2 (C4A)**"
 )
 
 BOOTH_PRESETS = [
     (
-        "🔍 Audit GKE Axion Nodes & Pods",
-        "Inspect the GKE Axion cluster nodes and default namespace workloads. Verify that ollama-0 is running on arm64 with Hyperdisk Balanced storage.",
+        "🔍 Audit GKE Axion Nodes & vLLM Pod",
+        "Inspect the GKE Axion cluster nodes and default namespace workloads. Verify that vllm-gemma4-0 is running on arm64 with Hyperdisk Balanced storage and OMP_NUM_THREADS=14.",
     ),
     (
         "💰 FinOps TCO: Axion C4A vs. GPU",
-        "Calculate the FinOps TCO comparing Google Axion c4a-standard-16 against x86 and an L4 GPU for 2 replicas handling 10,000 daily Gemma 4 agent turns.",
+        "Calculate the FinOps TCO comparing Google Axion c4a-standard-16 (running vLLM + Gemma 4) against x86 and an L4 GPU for 2 replicas handling 10,000 daily agent turns.",
     ),
     (
-        "⚡ Generate c4a-standard-32 Manifest",
-        "Generate a tuned GKE Arm64 StatefulSet manifest and Ollama Modelfile for scaling our Gemma 4 agent to a 32-vCPU c4a-standard-32 node.",
+        "⚡ Generate c4a-standard-32 vLLM YAML",
+        "Generate a tuned GKE Arm64 vLLM StatefulSet manifest and CPU thread/KV-cache profile for scaling our Gemma 4 agent to a 32-vCPU c4a-standard-32 node.",
     ),
     (
-        "🛠️ Why 14 Threads on c4a-standard-16?",
-        "Inspect our cluster node capacity and generate the Modelfile for a 16-vCPU c4a-standard-16 node. Explain why PARAMETER num_thread 14 is optimal.",
+        "🛠️ Why OMP_NUM_THREADS=14 on C4A?",
+        "Inspect our cluster node capacity and generate the vLLM tuning profile for a 16-vCPU c4a-standard-16 node. Explain why OMP_NUM_THREADS=14 and VLLM_CPU_KVCACHE_SPACE=16 are optimal.",
     ),
 ]
 
 with st.sidebar:
-    st.header("⚙️ Agent & Axion Config")
+    st.header("⚙️ Agent & vLLM Config")
     execution_mode = st.radio(
         "Execution Mode",
         options=[
             "🤖 Agent Mode (Google ADK + Tools)",
-            "💬 Raw LLM Stream (No Tools)",
+            "💬 Raw vLLM Stream (No Tools)",
         ],
         index=0,
-        help="Agent Mode runs Google ADK with live GKE & FinOps tools; Raw LLM Stream streams directly from Ollama `/v1/chat/completions`.",
+        help="Agent Mode runs Google ADK with live GKE & FinOps tools against vLLM; Raw Stream streams directly from vLLM `/v1/chat/completions`.",
     )
     model_choice = st.selectbox(
-        "Ollama Model (Gemma 4)",
-        options=["gemma4:4b-highthread", "gemma4:4b"],
-        index=0 if DEFAULT_OLLAMA_MODEL == "gemma4:4b-highthread" else 1,
-        help="Compare 14-thread tuned Gemma 4 (`num_thread 14`) vs. default thread allocation on `c4a-standard-16`.",
+        "vLLM Served Model (Gemma 4)",
+        options=["google/gemma-4-4b-it", "google/gemma-4-9b-it"],
+        index=0 if DEFAULT_VLLM_MODEL == "google/gemma-4-4b-it" else 1,
+        help="Served via vLLM Arm64 CPU (`--dtype=bfloat16 --enable-auto-tool-choice`) with `OMP_NUM_THREADS=14` on `c4a-standard-16`.",
     )
     base_url = st.text_input(
-        "Ollama Endpoint",
-        value=DEFAULT_OLLAMA_BASE_URL,
-        help="In-cluster Kubernetes Service URL (`http://ollama-service:11434/v1`) or external Gateway URL.",
+        "vLLM OpenAI Endpoint",
+        value=DEFAULT_VLLM_BASE_URL,
+        help="In-cluster Kubernetes Service URL (`http://vllm-service:8000/v1`) or external Gateway URL.",
     )
 
     st.divider()
@@ -127,7 +127,7 @@ if active_prompt:
     with st.chat_message("assistant"):
         if execution_mode.startswith("🤖"):
             with st.status(
-                f"Running Google ADK Agent (`{model_choice}` on `{MACHINE_TYPE}`)...",
+                f"Running Google ADK Agent via vLLM (`{model_choice}` on `{MACHINE_TYPE}`)...",
                 expanded=True,
             ) as status:
                 st.write("1️⃣ Analyzing intent & selecting Google ADK SRE/FinOps tools...")
@@ -166,13 +166,13 @@ if active_prompt:
                 except Exception as exc:
                     fallback_traces = _infer_fallback_tools_from_prompt(active_prompt)
                     status.update(
-                        label=f"Executed {len(fallback_traces)} local ADK tool(s) (Ollama endpoint warming up)",
+                        label=f"Executed {len(fallback_traces)} local ADK tool(s) (vLLM endpoint warming up)",
                         state="complete",
                         expanded=False,
                     )
                     render_tool_traces(fallback_traces)
                     fallback_md = (
-                        f"> **Note:** Ollama at `{base_url}` is still bootstrapping `{model_choice}` (`{exc}`). "
+                        f"> **Note:** vLLM at `{base_url}` is still warming up `{model_choice}` (`{exc}`). "
                         f"Below is the live **Google ADK Tool Telemetry** collected directly from the cluster:\n\n"
                     )
                     for tc in fallback_traces:
@@ -186,9 +186,9 @@ if active_prompt:
                         }
                     )
         else:
-            client = OpenAI(base_url=base_url, api_key=os.environ.get("OPENAI_API_KEY", "no-key"))
+            client = OpenAI(base_url=base_url, api_key=os.environ.get("OPENAI_API_KEY", "EMPTY"))
             with st.status(
-                f"Streaming raw tokens from `{model_choice}` on `{MACHINE_TYPE}`...",
+                f"Streaming raw tokens from vLLM (`{model_choice}` on `{MACHINE_TYPE}`)...",
                 expanded=True,
             ) as status:
                 def get_streamed_completion(completion_generator):
@@ -223,4 +223,4 @@ if active_prompt:
                         response = "".join(str(part) for part in response)
                     st.session_state.messages.append({"role": "assistant", "content": str(response)})
                 except Exception as e:
-                    st.error(f"Error connecting to Ollama at `{base_url}`: {e}")
+                    st.error(f"Error connecting to vLLM at `{base_url}`: {e}")

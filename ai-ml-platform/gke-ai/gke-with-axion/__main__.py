@@ -21,7 +21,7 @@ gke_ml_machine_type = (
     or gconfig.get("node_machine_type")
     or "c4a-standard-16"
 )
-ollama_model = gconfig.get("ollamaModel") or "gemma4:4b-highthread"
+vllm_model = gconfig.get("vllmModel") or "google/gemma-4-4b-it"
 
 # 1. Create a VPC-native GKE Cluster with Hyperdisk CSI & Gateway API enabled
 gke_cluster = gcp.container.Cluster(
@@ -134,16 +134,16 @@ kubeconfig = kubernetes.Provider(
     opts=pulumi.ResourceOptions(depends_on=[gke_cluster, gke_nodepool]),
 )
 
-# 4. Provision the Hyperdisk Balanced Arm StorageClass & Ollama + Gemma 4 StatefulSet
+# 4. Provision the Hyperdisk Balanced Arm StorageClass & vLLM + Gemma 4 StatefulSet
 sc_yaml = ConfigFile(
     "hyperdisk-arm-sc-yaml",
     file="k8s/hyperdisk-arm-sc.yaml",
     opts=pulumi.ResourceOptions(provider=kubeconfig, depends_on=[gke_nodepool]),
 )
 
-ollama_yaml = ConfigFile(
-    "ollama-gemma4-yaml",
-    file="k8s/ollama-gemma4.yaml",
+vllm_yaml = ConfigFile(
+    "vllm-axion-gemma4-yaml",
+    file="k8s/vllm-axion-gemma4.yaml",
     opts=pulumi.ResourceOptions(provider=kubeconfig, depends_on=[sc_yaml]),
 )
 
@@ -282,12 +282,12 @@ streamlit_deployment = kubernetes.apps.v1.Deployment(
                         ],
                         env=[
                             kubernetes.core.v1.EnvVarArgs(
-                                name="OLLAMA_BASE_URL",
-                                value="http://ollama-service:11434/v1",
+                                name="VLLM_BASE_URL",
+                                value="http://vllm-service:8000/v1",
                             ),
                             kubernetes.core.v1.EnvVarArgs(
-                                name="OLLAMA_MODEL",
-                                value=ollama_model,
+                                name="VLLM_MODEL",
+                                value=vllm_model,
                             ),
                             kubernetes.core.v1.EnvVarArgs(
                                 name="AXION_MACHINE_TYPE",
@@ -309,7 +309,7 @@ streamlit_deployment = kubernetes.apps.v1.Deployment(
     ),
     opts=pulumi.ResourceOptions(
         provider=kubeconfig,
-        depends_on=[ollama_yaml, docker_image, sre_agent_binding],
+        depends_on=[vllm_yaml, docker_image, sre_agent_binding],
     ),
 )
 
@@ -348,7 +348,7 @@ streamlit_ip = streamlit_service.status.apply(
 pulumi.export("clusterName", gke_cluster.name)
 pulumi.export("clusterId", gke_cluster.id)
 pulumi.export("axionMachineType", gke_ml_machine_type)
-pulumi.export("ollamaModel", ollama_model)
+pulumi.export("vllmModel", vllm_model)
 pulumi.export("streamlitImage", docker_image.ref)
 pulumi.export("streamlitIp", streamlit_ip)
 pulumi.export("streamlitUrl", streamlit_ip.apply(lambda ip: f"http://{ip}"))
