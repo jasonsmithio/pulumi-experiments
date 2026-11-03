@@ -175,10 +175,61 @@ docker_image = docker_build.Image(
     opts=pulumi.ResourceOptions(depends_on=[streamlit_image_repo]),
 )
 
-# 6. Deploy the Streamlit OpenAI Chat UI in-cluster on the GKE Axion Arm64 Node Pool
+# 6. Provision Least-Privilege Read-Only RBAC for the Google ADK GKE SRE & FinOps Agent
+sre_agent_sa = kubernetes.core.v1.ServiceAccount(
+    "axion-sre-agent-sa",
+    metadata=kubernetes.meta.v1.ObjectMetaArgs(
+        name="axion-sre-agent-sa",
+        namespace="default",
+    ),
+    opts=pulumi.ResourceOptions(provider=kubeconfig, depends_on=[gke_nodepool]),
+)
+
+sre_agent_role = kubernetes.rbac.v1.ClusterRole(
+    "axion-sre-agent-reader",
+    metadata=kubernetes.meta.v1.ObjectMetaArgs(
+        name="axion-sre-agent-reader",
+    ),
+    rules=[
+        kubernetes.rbac.v1.PolicyRuleArgs(
+            api_groups=[""],
+            resources=["nodes", "pods", "services", "persistentvolumeclaims"],
+            verbs=["get", "list", "watch"],
+        ),
+        kubernetes.rbac.v1.PolicyRuleArgs(
+            api_groups=["apps"],
+            resources=["deployments", "statefulsets"],
+            verbs=["get", "list", "watch"],
+        ),
+    ],
+    opts=pulumi.ResourceOptions(provider=kubeconfig, depends_on=[gke_nodepool]),
+)
+
+sre_agent_binding = kubernetes.rbac.v1.ClusterRoleBinding(
+    "axion-sre-agent-binding",
+    metadata=kubernetes.meta.v1.ObjectMetaArgs(
+        name="axion-sre-agent-binding",
+    ),
+    role_ref=kubernetes.rbac.v1.RoleRefArgs(
+        api_group="rbac.authorization.k8s.io",
+        kind="ClusterRole",
+        name=sre_agent_role.metadata.name,
+    ),
+    subjects=[
+        kubernetes.rbac.v1.SubjectArgs(
+            kind="ServiceAccount",
+            name=sre_agent_sa.metadata.name,
+            namespace="default",
+        )
+    ],
+    opts=pulumi.ResourceOptions(provider=kubeconfig, depends_on=[sre_agent_sa, sre_agent_role]),
+)
+
+# 7. Deploy the Google ADK + Streamlit Agent UI in-cluster on the GKE Axion Arm64 Node Pool
 streamlit_labels = {
     "app": "streamlit-gemma4-ui",
     "ai.gke.io/model": "gemma-4-4b",
+    "ai.gke.io/agent-framework": "google-adk",
 }
 
 streamlit_deployment = kubernetes.apps.v1.Deployment(
@@ -198,6 +249,7 @@ streamlit_deployment = kubernetes.apps.v1.Deployment(
                 labels=streamlit_labels,
             ),
             spec=kubernetes.core.v1.PodSpecArgs(
+                service_account_name=sre_agent_sa.metadata.name,
                 affinity=kubernetes.core.v1.AffinityArgs(
                     node_affinity=kubernetes.core.v1.NodeAffinityArgs(
                         required_during_scheduling_ignored_during_execution=kubernetes.core.v1.NodeSelectorArgs(
@@ -241,6 +293,10 @@ streamlit_deployment = kubernetes.apps.v1.Deployment(
                                 name="AXION_MACHINE_TYPE",
                                 value=gke_ml_machine_type,
                             ),
+                            kubernetes.core.v1.EnvVarArgs(
+                                name="GKE_CLUSTER_NAME",
+                                value=gke_cluster_name,
+                            ),
                         ],
                         resources=kubernetes.core.v1.ResourceRequirementsArgs(
                             requests={"cpu": "500m", "memory": "1Gi"},
@@ -253,7 +309,7 @@ streamlit_deployment = kubernetes.apps.v1.Deployment(
     ),
     opts=pulumi.ResourceOptions(
         provider=kubeconfig,
-        depends_on=[ollama_yaml, docker_image],
+        depends_on=[ollama_yaml, docker_image, sre_agent_binding],
     ),
 )
 
