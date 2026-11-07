@@ -2,6 +2,14 @@
 
 Session-by-session log of completed work, newest first.
 
+## 2026-11-06
+
+### Sync GitLab and GitHub remotes & resolve GH007 mirror failure
+
+- Added `gitlab` remote (`git@gitlab.com:jasonsmithio/pulumi-experiments.git`) and rebased `main` (`9ace5ee`, `4d6b22f`) onto `gitlab/main` (`daed660`, `4996f7f`, `025309c`) to resolve divergent histories between GitLab and GitHub.
+- Diagnosed the subsequent GitLab → GitHub push mirror failure via `glab api`: commit `185f1d8` (*"Switch gke-with-axion and Streamlit ADK container to uv"*) was authored/committed with private email `jaysmith@google.com`, triggering GitHub's `GH007` email privacy rejection.
+- Rewrote the `uv` migration commit (`6e70e72`) with `7904755+jasonsmithio@users.noreply.github.com`, synced `gitlab/main` and `origin/main`, and rebased local `rena-round1` (`cloud-run-gpu/rena`) onto the updated `main`.
+
 ## 2026-06-23
 
 ### Fix Dependabot langchain alerts in ollama-rag demos
