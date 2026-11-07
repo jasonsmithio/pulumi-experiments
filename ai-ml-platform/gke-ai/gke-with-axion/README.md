@@ -38,12 +38,10 @@ Autonomous agents execute frequent, bursty, multi-step **tool-calling loops** (i
 
 ## Configure & Deploy with Pulumi
 
-1. Create and activate a Python virtual environment and install dependencies:
+1. Sync the Python environment and dependencies using `uv`:
 
 ```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+uv sync
 ```
 
 2. Initialize (or select) your Pulumi stack and configure stack settings:

@@ -2,7 +2,8 @@ name: gke-arm
 runtime:
   name: python
   options:
-    virtualenv: venv
+    toolchain: uv
+    virtualenv: .venv
 description: A Python program to deploy a GKE Cluster for inferencing using Axion Processors on Google Cloud
 config:
   pulumi:tags:

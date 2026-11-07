@@ -1,4 +1,4 @@
-streamlit>=1.40.0
+streamlit>=1.57.0,<2.5.0
 google-adk>=1.0.0
 litellm>=1.55.0
 openai>=1.55.3

@@ -17,13 +17,13 @@ Autonomous Kubernetes SRE & FinOps agent built with **Google ADK (Agent Developm
 - `AXION_MACHINE_TYPE`: Defaults to `c4a-standard-16`.
 - `GKE_CLUSTER_NAME`: Defaults to `axion-cluster`.
 
-## Running Locally with Streamlit or Google ADK CLI
+## Running Locally with `uv` (Streamlit or Google ADK CLI)
 ```bash
-pip install -r requirements.txt
+uv sync
 
 # Option A: Launch the KubeCon Booth Streamlit UI
-streamlit run app.py
+uv run streamlit run app.py
 
 # Option B: Launch the Google ADK Dev UI
-adk web
+uv run adk web
 ```

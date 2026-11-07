@@ -1,0 +1,14 @@
+[project]
+name = "gke-with-axion"
+version = "0.1.0"
+description = "Deploy a GKE Axion (C4A) cluster running vLLM, Gemma 4, and a Google ADK SRE & FinOps Agent with Pulumi"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pulumi>=3.0.0,<4.0.0",
+    "pulumi-gcp>=8.27.0,<8.50.0",
+    "pulumi-kubernetes>=4.22.2,<4.30.0",
+    "pulumi-docker>=4.5.6,<5.0.0",
+    "pulumi-docker-build>=0.0.10,<0.1.0",
+    "streamlit>=1.57.0,<2.5.0",
+]
