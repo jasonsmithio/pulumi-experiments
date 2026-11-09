@@ -58,6 +58,12 @@ spec:
           value: "0-13"
         - name: VLLM_CPU_KVCACHE_SPACE
           value: "16"
+        - name: HF_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: hf-secret
+              key: hf_api_token
+              optional: true
         - name: HUGGING_FACE_HUB_TOKEN
           valueFrom:
             secretKeyRef:
