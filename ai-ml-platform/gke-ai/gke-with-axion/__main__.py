@@ -13,7 +13,9 @@ gcp_zone = gcp_config.get("zone") or gconfig.get("zone") or f"{gcp_region}-a"
 
 gke_network = gconfig.get("gkeNetwork") or "default"
 gke_cluster_name = gconfig.get("clusterName") or "axion-cluster"
-gke_master_version = gconfig.get("master_version") or "1.31"
+# Optional: only pin min_master_version if explicitly configured; otherwise let GKE
+# select the current default version from the REGULAR release channel.
+gke_master_version = gconfig.get("master_version")
 gke_nodepool_name = gconfig.get("nodepoolName") or "axion-nodepool"
 gke_nodepool_node_count = gconfig.get_int("nodesPerZone") or gconfig.get_int("node_count") or 2
 gke_ml_machine_type = (
@@ -22,6 +24,7 @@ gke_ml_machine_type = (
     or "c4a-standard-16"
 )
 vllm_model = gconfig.get("vllmModel") or "google/gemma-4-4b-it"
+hf_token = gconfig.get_secret("hf_token") or pulumi.Config("gke-axion").get_secret("hf_token")
 
 # 1. Create a VPC-native GKE Cluster with Hyperdisk CSI & Gateway API enabled
 gke_cluster = gcp.container.Cluster(
@@ -33,7 +36,10 @@ gke_cluster = gcp.container.Cluster(
     networking_mode="VPC_NATIVE",
     initial_node_count=1,
     remove_default_node_pool=True,
-    min_master_version=str(gke_master_version),
+    min_master_version=str(gke_master_version) if gke_master_version else None,
+    release_channel=gcp.container.ClusterReleaseChannelArgs(
+        channel="REGULAR",
+    ),
     secret_manager_config=gcp.container.ClusterSecretManagerConfigArgs(
         enabled=True,
     ),
@@ -134,17 +140,32 @@ kubeconfig = kubernetes.Provider(
     opts=pulumi.ResourceOptions(depends_on=[gke_cluster, gke_nodepool]),
 )
 
-# 4. Provision the Hyperdisk Balanced Arm StorageClass & vLLM + Gemma 4 StatefulSet
+# 4. Provision the Hyperdisk Balanced Arm StorageClass, optional HF Secret & vLLM + Gemma 4 StatefulSet
 sc_yaml = ConfigFile(
     "hyperdisk-arm-sc-yaml",
     file="k8s/hyperdisk-arm-sc.yaml",
     opts=pulumi.ResourceOptions(provider=kubeconfig, depends_on=[gke_nodepool]),
 )
 
+vllm_deps = [sc_yaml]
+if hf_token is not None:
+    hf_k8s_secret = kubernetes.core.v1.Secret(
+        "hf-secret",
+        metadata=kubernetes.meta.v1.ObjectMetaArgs(
+            name="hf-secret",
+            namespace="default",
+        ),
+        string_data={
+            "hf_api_token": hf_token,
+        },
+        opts=pulumi.ResourceOptions(provider=kubeconfig, depends_on=[gke_nodepool]),
+    )
+    vllm_deps.append(hf_k8s_secret)
+
 vllm_yaml = ConfigFile(
     "vllm-axion-gemma4-yaml",
     file="k8s/vllm-axion-gemma4.yaml",
-    opts=pulumi.ResourceOptions(provider=kubeconfig, depends_on=[sc_yaml]),
+    opts=pulumi.ResourceOptions(provider=kubeconfig, depends_on=vllm_deps),
 )
 
 # 5. Artifact Registry Repository & Multi-Arch (linux/amd64, linux/arm64) Streamlit Image
