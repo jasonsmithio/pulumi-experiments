@@ -17,8 +17,7 @@ gke_cluster_name = gconfig.get("clusterName") or "axion-cluster"
 # select the current default version from the REGULAR release channel.
 gke_master_version = gconfig.get("master_version")
 gke_nodepool_name = gconfig.get("nodepoolName") or "axion-nodepool"
-# Default to 1 c4a-standard-16 node (16 vCPUs) so it stays within the default 24 vCPU C4A regional quota
-gke_nodepool_node_count = gconfig.get_int("nodesPerZone") or gconfig.get_int("node_count") or 1
+gke_nodepool_node_count = gconfig.get_int("nodesPerZone") or gconfig.get_int("node_count") or 2
 gke_ml_machine_type = (
     gconfig.get("mlMachines")
     or gconfig.get("node_machine_type")
