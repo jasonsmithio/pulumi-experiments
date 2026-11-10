@@ -8,6 +8,7 @@ import os
 import time
 from typing import Any, Dict, List, Optional
 
+from .telemetry import compute_cost_metrics
 from .tools import (
     AGENT_TOOLS,
     TOOL_REGISTRY,
@@ -181,7 +182,8 @@ async def _run_adk_async(prompt: str, model_name: str, base_url: str) -> Dict[st
 
     tool_traces: List[Dict[str, Any]] = []
     final_chunks: List[str] = []
-    start_time = time.time()
+    t_start = time.perf_counter()
+    t_first_text: Optional[float] = None
 
     async for event in runner.run_async(
         user_id="kubecon_booth_user",
@@ -198,6 +200,7 @@ async def _run_adk_async(prompt: str, model_name: str, base_url: str) -> Dict[st
                         "name": fn_call.name,
                         "args": dict(fn_call.args) if getattr(fn_call, "args", None) else {},
                         "result": None,
+                        "t_call": time.perf_counter(),
                     }
                 )
             fn_resp = getattr(part, "function_response", None)
@@ -207,6 +210,9 @@ async def _run_adk_async(prompt: str, model_name: str, base_url: str) -> Dict[st
                 for trace in reversed(tool_traces):
                     if trace["name"] == fn_resp.name and trace["result"] is None:
                         trace["result"] = resp_payload
+                        t_call = trace.pop("t_call", None)
+                        if t_call is not None:
+                            trace["duration_ms"] = round((time.perf_counter() - t_call) * 1000.0, 1)
                         matched = True
                         break
                 if not matched:
@@ -219,17 +225,39 @@ async def _run_adk_async(prompt: str, model_name: str, base_url: str) -> Dict[st
                     )
             text_val = getattr(part, "text", None)
             if text_val:
+                if t_first_text is None:
+                    t_first_text = time.perf_counter()
                 final_chunks.append(text_val)
 
-    elapsed = max(time.time() - start_time, 1e-6)
+    t_end = time.perf_counter()
+    if t_first_text is None:
+        t_first_text = t_end
+
+    elapsed = max(t_end - t_start, 1e-6)
+    decode_sec = max(t_end - t_first_text, 1e-6)
     final_text = "\n".join(chunk.strip() for chunk in final_chunks if chunk.strip())
-    approx_tokens = max(1, len(final_text.split()) * 1.35)
+    approx_tokens = max(1, int(len(final_text.split()) * 1.35))
+    prompt_tokens = max(1, int(len(prompt.split()) * 1.35))
+    tool_exec_ms = round(sum(tc.get("duration_ms", 0.0) for tc in tool_traces), 1)
+    ttft_ms = round(max((t_first_text - t_start) * 1000.0 - tool_exec_ms, 1.0), 1)
+    decode_ms = round(decode_sec * 1000.0, 1)
+    itl_ms = round((elapsed * 1000.0) / max(approx_tokens, 1), 2)
+    tps = round(approx_tokens / elapsed, 2)
+    cost_info = compute_cost_metrics(tps)
     return {
         "final_text": final_text,
         "tool_calls": tool_traces,
-        "tokens_per_sec": round(approx_tokens / elapsed, 2),
+        "tokens_per_sec": tps,
+        "e2e_tokens_per_sec": tps,
+        "ttft_ms": ttft_ms,
+        "decode_ms": decode_ms,
+        "itl_ms_per_token": itl_ms,
+        "tool_exec_ms": tool_exec_ms,
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": approx_tokens,
         "elapsed_sec": round(elapsed, 2),
         "engine": "Google ADK (InMemoryRunner + LiteLLM/vLLM)",
+        **cost_info,
     }
 
 
@@ -393,25 +421,68 @@ def execute_agent_turn(
                     "engine": "Google ADK Tools + vLLM OpenAI API",
                 }
 
-        gen_start = time.time()
-        second_resp = client.chat.completions.create(
+        gen_start = time.perf_counter()
+        t_first_token: Optional[float] = None
+        chunk_count = 0
+        pieces: List[str] = []
+        prompt_tokens = 0
+        completion_tokens = 0
+
+        stream_resp = client.chat.completions.create(
             model=model_name,
             messages=messages,
+            stream=True,
+            stream_options={"include_usage": True},
         )
-        final_text = second_resp.choices[0].message.content or ""
-        gen_elapsed = max(time.time() - gen_start, 1e-6)
+        for chunk in stream_resp:
+            usage = getattr(chunk, "usage", None)
+            if usage is not None:
+                prompt_tokens = getattr(usage, "prompt_tokens", 0) or prompt_tokens
+                completion_tokens = getattr(usage, "completion_tokens", 0) or completion_tokens
+            if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                if t_first_token is None:
+                    t_first_token = time.perf_counter()
+                chunk_count += 1
+                pieces.append(chunk.choices[0].delta.content)
+
+        gen_end = time.perf_counter()
+        if t_first_token is None:
+            t_first_token = gen_end
+
+        final_text = "".join(pieces)
+        gen_elapsed = max(gen_end - gen_start, 1e-6)
+        decode_sec = max(gen_end - t_first_token, 1e-6)
         total_elapsed = max(time.time() - start_time, 1e-6)
-        usage = getattr(second_resp, "usage", None)
-        completion_tokens = getattr(usage, "completion_tokens", None) if usage else None
-        if not completion_tokens:
-            completion_tokens = max(1, int(len(final_text.split()) * 1.35))
+
+        if completion_tokens <= 0:
+            completion_tokens = max(chunk_count, int(len(final_text.split()) * 1.35), 1)
+        if prompt_tokens <= 0:
+            prompt_tokens = max(int(len(prompt.split()) * 1.35), 1)
+
+        ttft_ms = round((t_first_token - gen_start) * 1000.0, 1)
+        decode_ms = round(decode_sec * 1000.0, 1)
+        itl_ms_per_token = round(decode_ms / max(completion_tokens - 1, 1), 2)
+        tool_exec_ms = round(sum(tc.get("duration_ms", 0.0) for tc in tool_traces), 1)
+        decode_tok_per_sec = round(
+            completion_tokens / decode_sec if completion_tokens > 1 else completion_tokens / gen_elapsed,
+            2,
+        )
+        cost_info = compute_cost_metrics(decode_tok_per_sec)
 
         return {
             "final_text": final_text,
             "tool_calls": tool_traces,
-            "tokens_per_sec": round(completion_tokens / gen_elapsed, 2),
+            "tokens_per_sec": decode_tok_per_sec,
+            "e2e_tokens_per_sec": round(completion_tokens / gen_elapsed, 2),
+            "ttft_ms": ttft_ms,
+            "decode_ms": decode_ms,
+            "itl_ms_per_token": itl_ms_per_token,
+            "tool_exec_ms": tool_exec_ms,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
             "elapsed_sec": round(total_elapsed, 2),
             "engine": "Google ADK Tools + vLLM OpenAI API",
+            **cost_info,
         }
     except Exception as exc:
         inferred_traces = _infer_fallback_tools_from_prompt(prompt)
