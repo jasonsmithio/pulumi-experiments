@@ -39,7 +39,7 @@ spec:
         cloud.google.com/gke-nodepool: "axion-nodepool"
       containers:
         - name: vllm-cpu
-          image: public.ecr.aws/q9t5s3a7/vllm-cpu-release-repo:latest
+          image: public.ecr.aws/q9t5s3a7/vllm-arm64-cpu-release-repo:latest
           command: ["python3", "-m", "vllm.entrypoints.openai.api_server"]
           args:
             - "--model=$(MODEL_ID)"

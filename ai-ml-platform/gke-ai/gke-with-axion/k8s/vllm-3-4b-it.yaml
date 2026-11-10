@@ -29,7 +29,7 @@ spec:
         cloud.google.com/gke-nodepool: "axion-nodepool"
       containers:
       - name: inference-server
-        image: public.ecr.aws/q9t5s3a7/vllm-cpu-release-repo:latest
+        image: public.ecr.aws/q9t5s3a7/vllm-arm64-cpu-release-repo:latest
         resources:
           requests:
             cpu: "12"
