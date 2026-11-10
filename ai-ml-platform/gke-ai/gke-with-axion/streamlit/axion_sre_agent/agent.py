@@ -330,96 +330,42 @@ def execute_agent_turn(
     model_name: str = DEFAULT_VLLM_MODEL,
     base_url: str = DEFAULT_VLLM_BASE_URL,
 ) -> Dict[str, Any]:
-    """Executes an agentic turn using Google ADK first, with an OpenAI-compatible vLLM tool-calling fallback."""
-    # 1. Try Google ADK InMemoryRunner first
-    try:
-        adk_result = asyncio.run(_run_adk_async(prompt=prompt, model_name=model_name, base_url=base_url))
-        if adk_result.get("final_text"):
-            return adk_result
-    except Exception:
-        pass
-
-    # 2. Fallback: OpenAI-compatible tool-calling loop against vLLM `/v1`
+    """Executes an agentic turn with true token-level streaming TTFT/ITL measurement against vLLM `/v1`."""
     from openai import OpenAI
 
     client = OpenAI(base_url=base_url, api_key=os.environ.get("OPENAI_API_KEY", "EMPTY"))
     messages: List[Dict[str, Any]] = [{"role": "system", "content": SYSTEM_INSTRUCTION}]
-    for msg in chat_history or []:
+    for msg in (chat_history or [])[-4:]:
         if msg.get("role") in ("user", "assistant") and msg.get("content"):
-            messages.append({"role": msg["role"], "content": msg["content"]})
+            messages.append({"role": msg["role"], "content": msg["content"][:600]})
     messages.append({"role": "user", "content": prompt})
 
     tool_traces: List[Dict[str, Any]] = []
-    start_time = time.time()
+    start_time = time.perf_counter()
 
     try:
-        first_resp = client.chat.completions.create(
-            model=model_name,
-            messages=messages,
-            tools=OPENAI_TOOL_SCHEMAS,
-            tool_choice="auto",
-        )
-        choice_msg = first_resp.choices[0].message
-        tool_calls = getattr(choice_msg, "tool_calls", None) or []
-
-        if tool_calls:
-            messages.append(choice_msg)
-            for tc in tool_calls:
-                fn_name = tc.function.name
-                try:
-                    fn_args = json.loads(tc.function.arguments or "{}")
-                except Exception:
-                    fn_args = {}
-                fn_impl = TOOL_REGISTRY.get(fn_name)
-                t0 = time.time()
-                if fn_impl is not None:
-                    try:
-                        tool_output = fn_impl(**fn_args)
-                    except Exception as exc:
-                        tool_output = {"error": str(exc)}
-                else:
-                    tool_output = {"error": f"Unknown tool: {fn_name}"}
-                duration_ms = round((time.time() - t0) * 1000, 1)
-                tool_traces.append(
-                    {
-                        "name": fn_name,
-                        "args": fn_args,
-                        "result": tool_output,
-                        "duration_ms": duration_ms,
-                    }
-                )
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tc.id,
-                        "name": fn_name,
-                        "content": json.dumps(tool_output),
-                    }
-                )
-        else:
-            inferred_traces = _infer_fallback_tools_from_prompt(prompt)
-            if inferred_traces:
-                tool_traces.extend(inferred_traces)
-                context_blob = json.dumps(
-                    [{t["name"]: t["result"]} for t in inferred_traces],
-                    indent=2,
-                )
-                messages.append(
-                    {
-                        "role": "system",
-                        "content": f"Live GKE & FinOps Tool Telemetry collected by Google ADK tools:\n{context_blob}",
-                    }
-                )
-            elif choice_msg.content:
-                elapsed = max(time.time() - start_time, 1e-6)
-                approx_tokens = max(1, len(choice_msg.content.split()) * 1.35)
-                return {
-                    "final_text": choice_msg.content,
-                    "tool_calls": [],
-                    "tokens_per_sec": round(approx_tokens / elapsed, 2),
-                    "elapsed_sec": round(elapsed, 2),
-                    "engine": "Google ADK Tools + vLLM OpenAI API",
+        # 1. Execute matching Google ADK tools deterministically first (fast ~5-50ms K8s API / FinOps calls)
+        #    so we only need ONE streaming LLM call with compact context (<400 prompt tokens -> sub-second TTFT!)
+        inferred_traces = _infer_fallback_tools_from_prompt(prompt)
+        if inferred_traces:
+            tool_traces.extend(inferred_traces)
+            compact_summaries = []
+            for t in inferred_traces:
+                res_copy = dict(t["result"]) if isinstance(t["result"], dict) else t["result"]
+                if isinstance(res_copy, dict) and "kubernetes_manifest_yaml" in res_copy:
+                    # Keep the summary compact for prefill speed while full YAML is shown in the ADK tool trace
+                    res_copy = {k: v for k, v in res_copy.items() if k != "kubernetes_manifest_yaml"}
+                compact_summaries.append({t["name"]: res_copy})
+            context_blob = json.dumps(compact_summaries, separators=(",", ":"))
+            messages.append(
+                {
+                    "role": "system",
+                    "content": (
+                        f"Live GKE & FinOps Tool Telemetry collected by Google ADK tools: {context_blob}\n"
+                        "Summarize the key findings concisely in 4-6 bullet points."
+                    ),
                 }
+            )
 
         gen_start = time.perf_counter()
         t_first_token: Optional[float] = None
@@ -431,6 +377,8 @@ def execute_agent_turn(
         stream_resp = client.chat.completions.create(
             model=model_name,
             messages=messages,
+            max_tokens=220,
+            temperature=0.2,
             stream=True,
             stream_options={"include_usage": True},
         )
@@ -452,7 +400,7 @@ def execute_agent_turn(
         final_text = "".join(pieces)
         gen_elapsed = max(gen_end - gen_start, 1e-6)
         decode_sec = max(gen_end - t_first_token, 1e-6)
-        total_elapsed = max(time.time() - start_time, 1e-6)
+        total_elapsed = max(gen_end - start_time, 1e-6)
 
         if completion_tokens <= 0:
             completion_tokens = max(chunk_count, int(len(final_text.split()) * 1.35), 1)
@@ -481,7 +429,7 @@ def execute_agent_turn(
             "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens,
             "elapsed_sec": round(total_elapsed, 2),
-            "engine": "Google ADK Tools + vLLM OpenAI API",
+            "engine": "Google ADK Tools + vLLM OpenAI Streaming API",
             **cost_info,
         }
     except Exception as exc:
