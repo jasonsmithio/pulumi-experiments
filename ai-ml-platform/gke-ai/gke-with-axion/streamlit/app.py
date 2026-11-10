@@ -374,15 +374,43 @@ with tab_agent:
                                 yield chunk.choices[0].delta.content
 
                     try:
+                        inferred_for_stream = _infer_fallback_tools_from_prompt(active_prompt)
+                        stream_messages = []
+                        for m in st.session_state.messages[:-1][-2:]:
+                            if m.get("role") in ("user", "assistant") and m.get("content"):
+                                stream_messages.append({"role": m["role"], "content": m["content"][:500]})
+                        if inferred_for_stream:
+                            compact_ctx = json.dumps(
+                                [
+                                    {
+                                        t["name"]: {
+                                            k: v
+                                            for k, v in (t["result"].items() if isinstance(t["result"], dict) else [])
+                                            if k not in ("kubernetes_manifest_yaml", "kubernetes_statefulset_yaml")
+                                        }
+                                    }
+                                    for t in inferred_for_stream
+                                ],
+                                indent=2,
+                            )
+                            stream_user_text = (
+                                f"{active_prompt}\n\n"
+                                f"AUTHORITATIVE LIVE GKE & FINOPS DATA (use these exact numbers, node names, "
+                                f"and dollar costs; do NOT say you lack access to pricing data):\n"
+                                f"```json\n{compact_ctx}\n```\n"
+                                f"Summarize the exact numbers in 4-6 concise bullet points."
+                            )
+                        else:
+                            stream_user_text = active_prompt
+                        stream_messages.append({"role": "user", "content": stream_user_text})
+
                         response = st.write_stream(
                             get_streamed_completion(
                                 client.chat.completions.create(
                                     model=model_choice,
-                                    messages=[
-                                        {"role": m["role"], "content": m["content"]}
-                                        for m in st.session_state.messages
-                                    ],
+                                    messages=stream_messages,
                                     max_tokens=220,
+                                    temperature=0.2,
                                     stream=True,
                                     stream_options={"include_usage": True},
                                 )

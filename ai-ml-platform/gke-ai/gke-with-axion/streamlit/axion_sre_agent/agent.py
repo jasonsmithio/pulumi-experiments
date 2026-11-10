@@ -334,18 +334,18 @@ def execute_agent_turn(
     from openai import OpenAI
 
     client = OpenAI(base_url=base_url, api_key=os.environ.get("OPENAI_API_KEY", "EMPTY"))
-    messages: List[Dict[str, Any]] = [{"role": "system", "content": SYSTEM_INSTRUCTION}]
-    for msg in (chat_history or [])[-4:]:
+    messages: List[Dict[str, Any]] = []
+    for msg in (chat_history or [])[-2:]:
         if msg.get("role") in ("user", "assistant") and msg.get("content"):
-            messages.append({"role": msg["role"], "content": msg["content"][:600]})
-    messages.append({"role": "user", "content": prompt})
+            messages.append({"role": msg["role"], "content": msg["content"][:500]})
 
     tool_traces: List[Dict[str, Any]] = []
     start_time = time.perf_counter()
 
     try:
         # 1. Execute matching Google ADK tools deterministically first (fast ~5-50ms K8s API / FinOps calls)
-        #    so we only need ONE streaming LLM call with compact context (<400 prompt tokens -> sub-second TTFT!)
+        #    and embed the exact JSON telemetry directly inside the user turn (Gemma 4's chat template
+        #    requires alternating user/assistant turns and ignores trailing system messages).
         inferred_traces = _infer_fallback_tools_from_prompt(prompt)
         if inferred_traces:
             tool_traces.extend(inferred_traces)
@@ -359,16 +359,20 @@ def execute_agent_turn(
                         if k not in ("kubernetes_manifest_yaml", "kubernetes_statefulset_yaml")
                     }
                 compact_summaries.append({t["name"]: res_copy})
-            context_blob = json.dumps(compact_summaries, separators=(",", ":"))
-            messages.append(
-                {
-                    "role": "system",
-                    "content": (
-                        f"Live GKE & FinOps Tool Telemetry collected by Google ADK tools: {context_blob}\n"
-                        "Summarize the key findings concisely in 4-6 bullet points."
-                    ),
-                }
+            context_blob = json.dumps(compact_summaries, indent=2)
+            augmented_user_prompt = (
+                f"{SYSTEM_INSTRUCTION}\n\n"
+                f"USER REQUEST:\n{prompt}\n\n"
+                f"AUTHORITATIVE LIVE GKE & FINOPS DATA (already fetched by your Google ADK tools — "
+                f"use these EXACT numbers, node names, dollar costs, and speeds in your answer; "
+                f"NEVER say you lack access to pricing or cluster data):\n"
+                f"```json\n{context_blob}\n```\n\n"
+                f"Write a concise, authoritative 4-6 bullet engineering answer citing the exact numbers above."
             )
+        else:
+            augmented_user_prompt = f"{SYSTEM_INSTRUCTION}\n\nUSER REQUEST:\n{prompt}"
+
+        messages.append({"role": "user", "content": augmented_user_prompt})
 
         gen_start = time.perf_counter()
         t_first_token: Optional[float] = None
