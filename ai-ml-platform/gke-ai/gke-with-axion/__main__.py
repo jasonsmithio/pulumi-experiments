@@ -23,7 +23,7 @@ gke_ml_machine_type = (
     or gconfig.get("node_machine_type")
     or "c4a-standard-16"
 )
-vllm_model = gconfig.get("vllmModel") or "google/gemma-4-4b-it"
+vllm_model = gconfig.get("vllmModel") or "google/gemma-4-E4B-it"
 hf_token = gconfig.get_secret("hf_token") or pulumi.Config("gke-axion").get_secret("hf_token")
 
 # 1. Create a VPC-native GKE Cluster with Hyperdisk CSI & Gateway API enabled

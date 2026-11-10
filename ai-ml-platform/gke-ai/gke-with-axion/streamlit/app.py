@@ -77,8 +77,8 @@ with st.sidebar:
     )
     model_choice = st.selectbox(
         "vLLM Served Model (Gemma 4)",
-        options=["google/gemma-4-4b-it", "google/gemma-4-9b-it"],
-        index=0 if DEFAULT_VLLM_MODEL == "google/gemma-4-4b-it" else 1,
+        options=["google/gemma-4-E4B-it", "google/gemma-4-E2B-it"],
+        index=0 if DEFAULT_VLLM_MODEL != "google/gemma-4-E2B-it" else 1,
         help="Served via vLLM Arm64 CPU (`--dtype=bfloat16 --enable-auto-tool-choice`) with `OMP_NUM_THREADS=14` on `c4a-standard-16`.",
     )
     base_url = st.text_input(

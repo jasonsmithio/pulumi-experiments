@@ -26,7 +26,7 @@ DEFAULT_VLLM_BASE_URL = (
 DEFAULT_VLLM_MODEL = (
     os.environ.get("VLLM_MODEL")
     or os.environ.get("OLLAMA_MODEL")
-    or "google/gemma-4-4b-it"
+    or "google/gemma-4-E4B-it"
 )
 MACHINE_TYPE = os.environ.get("AXION_MACHINE_TYPE", "c4a-standard-16")
 

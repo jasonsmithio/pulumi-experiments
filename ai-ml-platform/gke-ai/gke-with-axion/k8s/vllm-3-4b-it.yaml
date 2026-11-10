@@ -49,7 +49,7 @@ spec:
         - --tool-call-parser=pythonic
         env:
         - name: MODEL_ID
-          value: google/gemma-4-4b-it
+          value: google/gemma-4-E4B-it
         - name: VLLM_TARGET_DEVICE
           value: "cpu"
         - name: OMP_NUM_THREADS

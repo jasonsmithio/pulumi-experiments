@@ -302,7 +302,7 @@ def calculate_axion_vs_gpu_finops(
 
 def audit_and_generate_axion_manifest(
     workload_name: str = "vllm-gemma4",
-    model_tag: str = "google/gemma-4-4b-it",
+    model_tag: str = "google/gemma-4-E4B-it",
     vcpu_count: int = 16,
     hyperdisk_size_gi: int = 30,
 ) -> Dict[str, Any]:
