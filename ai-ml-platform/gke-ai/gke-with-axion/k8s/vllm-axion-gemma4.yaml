@@ -79,7 +79,7 @@ spec:
                   key: hf_api_token
                   optional: true
           volumeMounts:
-            - name: hf-cache-axion-pvc
+            - name: hf-cache-pvc
               mountPath: /root/.cache/huggingface
             - name: dshm
               mountPath: /dev/shm
@@ -99,10 +99,10 @@ spec:
             medium: Memory
   volumeClaimTemplates:
     - metadata:
-        name: hf-cache-axion-pvc
+        name: hf-cache-pvc
       spec:
         accessModes: [ "ReadWriteOnce" ]
-        storageClassName: "hyperdisk-axion"
+        storageClassName: "hyperdisk-arm"
         resources:
           requests:
             storage: 30Gi
