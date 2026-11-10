@@ -352,9 +352,12 @@ def execute_agent_turn(
             compact_summaries = []
             for t in inferred_traces:
                 res_copy = dict(t["result"]) if isinstance(t["result"], dict) else t["result"]
-                if isinstance(res_copy, dict) and "kubernetes_manifest_yaml" in res_copy:
-                    # Keep the summary compact for prefill speed while full YAML is shown in the ADK tool trace
-                    res_copy = {k: v for k, v in res_copy.items() if k != "kubernetes_manifest_yaml"}
+                if isinstance(res_copy, dict):
+                    res_copy = {
+                        k: v
+                        for k, v in res_copy.items()
+                        if k not in ("kubernetes_manifest_yaml", "kubernetes_statefulset_yaml")
+                    }
                 compact_summaries.append({t["name"]: res_copy})
             context_blob = json.dumps(compact_summaries, separators=(",", ":"))
             messages.append(

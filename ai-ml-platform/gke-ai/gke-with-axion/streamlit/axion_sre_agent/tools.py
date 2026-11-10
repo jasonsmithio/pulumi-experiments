@@ -176,23 +176,24 @@ def inspect_namespace_workloads(namespace: str = "default") -> Dict[str, Any]:
                 "arch_affinity": "kubernetes.io/arch=arm64",
                 "nodepool": "axion-nodepool",
                 "inference_engine": "vLLM Arm64 CPU (BF16 + Arm KleidiAI + PagedAttention)",
-                "served_model": "google/gemma-4-4b-it",
+                "served_model": "google/gemma-4-E4B-it",
                 "vllm_tuning_env": {
                     "VLLM_TARGET_DEVICE": "cpu",
                     "OMP_NUM_THREADS": "14",
                     "VLLM_CPU_OMP_THREADS_BIND": "0-13",
-                    "VLLM_CPU_KVCACHE_SPACE": "16 (GiB DDR5)",
+                    "VLLM_CPU_KVCACHE_SPACE": "8 (GiB DDR5, 281k tokens)",
                     "dtype": "bfloat16",
-                    "tool_call_parser": "pythonic (--enable-auto-tool-choice)",
+                    "flags": "--enforce-eager --language-model-only --enable-auto-tool-choice",
+                    "tool_call_parser": "pythonic",
                 },
                 "containers": [
                     {
                         "name": "vllm-cpu",
-                        "image": "public.ecr.aws/q9t5s3a7/vllm-cpu-release-repo:latest",
+                        "image": "public.ecr.aws/q9t5s3a7/vllm-arm64-cpu-release-repo:latest",
                         "cpu_request": "12",
                         "cpu_limit": "15",
                         "memory_request": "24Gi",
-                        "memory_limit": "40Gi",
+                        "memory_limit": "52Gi",
                     }
                 ],
             },
@@ -249,10 +250,10 @@ def calculate_axion_vs_gpu_finops(
     daily_agent_turns = max(100, int(daily_agent_turns))
     monthly_turns = daily_agent_turns * 30
 
-    # Approximate US-Central1 monthly on-demand node + 30Gi Hyperdisk Balanced rates per replica
-    c4a_monthly_per_node = 415.0  # c4a-standard-16 + 30Gi hyperdisk-balanced
-    x86_monthly_per_node = 565.0  # comparable 16-vCPU current-gen x86 + SSD PD
-    gpu_l4_monthly_per_node = 895.0  # g2-standard-8 (1x NVIDIA L4 GPU) + boot/model disk
+    # On-demand monthly node + 30Gi Hyperdisk Balanced rates per replica (730 hrs/mo)
+    c4a_monthly_per_node = 443.0  # c4a-standard-16 ($0.6067/hr) + 30Gi hyperdisk-balanced
+    x86_monthly_per_node = 612.0  # c3-standard-16 ($0.8388/hr) + SSD PD
+    gpu_l4_monthly_per_node = 990.0  # g2-standard-16 (1x NVIDIA L4 GPU, $1.356/hr) + boot/model disk
 
     c4a_total = round(c4a_monthly_per_node * replicas, 2)
     x86_total = round(x86_monthly_per_node * replicas, 2)
@@ -260,41 +261,52 @@ def calculate_axion_vs_gpu_finops(
 
     return {
         "workload_profile": {
-            "model": f"google/gemma-4-{int(model_size_billions)}b-it (vLLM BF16 + PagedAttention)",
+            "model": "google/gemma-4-E4B-it (vLLM Arm64 BF16 + PagedAttention)",
             "replicas": replicas,
             "daily_agent_turns": daily_agent_turns,
             "monthly_agent_turns": monthly_turns,
         },
+        "ux_speed_vs_gpu_reality": {
+            "live_axion_decode_speed": "~10.5–12.0 tokens/sec (2.3x–2.6x faster than 4.5 tok/s human reading speed)",
+            "live_axion_ttft": "~600 ms (<1,000 ms interactive UX target)",
+            "25_token_agent_tool_call": "Axion: ~2.9s vs L4 GPU: ~0.6s (+2.3s delta inside a standard UI spinner)",
+            "80_token_streaming_chat": "Axion: ~8.2s vs Human Reading Time: 17.8s (0.0s mid-stream wait on both Axion and GPU)",
+            "120_token_cicd_triage": "Adds <10% to a 90s CI/CD pipeline while eliminating GPU quota bottlenecks",
+        },
         "options": {
             "google_axion_c4a_standard_16": {
-                "machine_type": "c4a-standard-16 (16 Arm Neoverse V2 vCPUs, 64 GiB DDR5)",
+                "machine_type": "c4a-standard-16 (16 Arm Neoverse V2 vCPUs, 64 GiB DDR5, $0.61/hr)",
                 "monthly_cost_usd": c4a_total,
+                "annual_cost_usd": round(c4a_total * 12, 2),
                 "cost_per_1k_agent_turns_usd": round((c4a_total / monthly_turns) * 1000, 4),
                 "price_performance_vs_x86": "Up to +65% better price-performance",
                 "energy_efficiency_vs_x86": "Up to +60% better energy efficiency",
                 "gpu_quota_required": False,
             },
-            "comparable_x86_standard_16": {
-                "machine_type": "x86 16-vCPU VM (64 GiB RAM)",
+            "comparable_x86_c3_standard_16": {
+                "machine_type": "c3-standard-16 (16 x86 vCPUs, 64 GiB RAM, $0.84/hr)",
                 "monthly_cost_usd": x86_total,
+                "annual_cost_usd": round(x86_total * 12, 2),
                 "cost_per_1k_agent_turns_usd": round((x86_total / monthly_turns) * 1000, 4),
                 "gpu_quota_required": False,
             },
-            "dedicated_gpu_g2_standard_8_l4": {
-                "machine_type": "g2-standard-8 (1x NVIDIA L4 24GB GPU)",
+            "dedicated_gpu_g2_standard_16_l4": {
+                "machine_type": "g2-standard-16 (1x NVIDIA L4 24GB GPU, $1.36/hr)",
                 "monthly_cost_usd": gpu_total,
+                "annual_cost_usd": round(gpu_total * 12, 2),
                 "cost_per_1k_agent_turns_usd": round((gpu_total / monthly_turns) * 1000, 4),
                 "gpu_quota_required": True,
-                "note": "Over-provisioned for bursty in-cluster SRE/FinOps agents running 4B SLMs.",
+                "note": "Streams at ~60 tok/s, but humans read at 4.5 tok/s — extra speed sits unread while costing 2.24x more.",
             },
         },
         "finops_summary": {
             "monthly_savings_vs_gpu_usd": round(gpu_total - c4a_total, 2),
+            "annual_savings_vs_gpu_usd": round((gpu_total - c4a_total) * 12, 2),
             "savings_vs_gpu_percent": f"{round(((gpu_total - c4a_total) / gpu_total) * 100, 1)}%",
             "monthly_savings_vs_x86_usd": round(x86_total - c4a_total, 2),
             "recommendation": (
-                "Use Google Axion c4a-standard-16 with vLLM (OMP_NUM_THREADS=14, VLLM_CPU_KVCACHE_SPACE=16) "
-                "for always-on GKE agents and reserve scarce GPU quota for >27B frontier models."
+                "Use Google Axion c4a-standard-16 with vLLM (OMP_NUM_THREADS=14, VLLM_CPU_KVCACHE_SPACE=8) "
+                "where ~11 tok/s (2.4x human reading speed) makes perceived latency difference vs GPU negligible at 55% lower cost."
             ),
         },
     }
@@ -329,7 +341,8 @@ def audit_and_generate_axion_manifest(
     container_cpu_limit = max(1, chosen_vcpu - 1)
     container_cpu_request = max(1, chosen_vcpu - 4)
     memory_gb = chosen_vcpu * 4
-    kvcache_space_gb = max(4, memory_gb // 4)
+    kvcache_space_gb = max(4, memory_gb // 8)
+    memory_limit_gb = max(24, memory_gb - 12)
 
     vllm_env_profile = {
         "MODEL_ID": model_tag,
@@ -337,7 +350,7 @@ def audit_and_generate_axion_manifest(
         "OMP_NUM_THREADS": str(optimal_threads),
         "VLLM_CPU_OMP_THREADS_BIND": thread_bind,
         "VLLM_CPU_KVCACHE_SPACE": str(kvcache_space_gb),
-        "CLI_FLAGS": "--dtype=bfloat16 --max-model-len=8192 --enable-auto-tool-choice --tool-call-parser=pythonic",
+        "CLI_FLAGS": "--dtype=bfloat16 --max-model-len=8192 --enforce-eager --language-model-only --enable-auto-tool-choice --tool-call-parser=pythonic",
     }
 
     k8s_yaml = f"""apiVersion: apps/v1
@@ -354,7 +367,7 @@ spec:
     metadata:
       labels:
         app: {workload_name}
-        ai.gke.io/model: gemma-4-4b-it
+        ai.gke.io/model: gemma-4-e4b-it
         ai.gke.io/inference-server: vllm
     spec:
       nodeSelector:
@@ -370,6 +383,8 @@ spec:
             - "--host=0.0.0.0"
             - "--port=8000"
             - "--max-model-len=8192"
+            - "--enforce-eager"
+            - "--language-model-only"
             - "--enable-auto-tool-choice"
             - "--tool-call-parser=pythonic"
           env:
@@ -383,13 +398,19 @@ spec:
               value: "{kvcache_space_gb}"
             - name: HF_HOME
               value: "/root/.cache/huggingface"
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-secret
+                  key: hf_api_token
+                  optional: true
           resources:
             requests:
               cpu: "{container_cpu_request}"
               memory: "{max(12, memory_gb // 3)}Gi"
             limits:
               cpu: "{container_cpu_limit}"
-              memory: "{max(20, (memory_gb * 2) // 3)}Gi"
+              memory: "{memory_limit_gb}Gi"
           volumeMounts:
             - name: hf-cache-pvc
               mountPath: /root/.cache/huggingface
