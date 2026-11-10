@@ -1,5 +1,13 @@
 @import url('https://fonts.googleapis.com/css2?family=Google+Sans+Flex');
 
-body, * {
-    font-family: 'Google Sans Flex', Arial, sans-serif !important;
+html, body, [data-testid="stAppViewContainer"], [data-testid="stSidebar"], [data-testid="stHeader"], [data-testid="stMarkdownContainer"], p, h1, h2, h3, h4, h5, h6, label, input, textarea, button {
+    font-family: 'Google Sans Flex', Arial, sans-serif;
+}
+
+/* Preserve Streamlit's Material Symbols icon ligatures (sidebar collapse arrow, theme switcher, expander icons) */
+[data-testid="stIconMaterial"],
+span[data-testid="stIconMaterial"],
+.material-icons,
+.material-symbols-rounded {
+    font-family: "Material Symbols Rounded" !important;
 }
