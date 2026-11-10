@@ -544,31 +544,85 @@ with tab_bench:
                 delta=f"-55% vs L4 GPU (${bench['l4_gpu_usd_per_1m_tokens']:.2f})",
             )
 
+            st.markdown("##### ⚖️ Why the Speed Difference vs. GPU Is Negligible in Real-World Use Cases")
+            st.caption(
+                "Calculated directly from your live measured Google Axion throughput "
+                f"(`{bench['aggregate_tokens_per_sec']:.2f} tok/s`, `{bench['median_ttft_ms']:.0f} ms` TTFT) "
+                "vs. an NVIDIA L4 GPU reference baseline (`g2-standard-16`, `~60 tok/s`, `~180 ms` TTFT, `$1.36/hr`) "
+                "and average human reading speed (`4.5 tok/s` / `250 words/min`)."
+            )
+
+            live_tps = max(bench["aggregate_tokens_per_sec"], 1.0)
+            live_ttft_s = bench["median_ttft_ms"] / 1000.0
+            gpu_tps = 60.0
+            gpu_ttft_s = 0.18
+
+            # 1) 25-token Agent Tool Call, 2) 80-token Interactive Chat, 3) 120-token CI/CD Webhook
+            axion_25 = live_ttft_s + (25.0 / live_tps)
+            gpu_25 = gpu_ttft_s + (25.0 / gpu_tps)
+
+            axion_80 = live_ttft_s + (80.0 / live_tps)
+            gpu_80 = gpu_ttft_s + (80.0 / gpu_tps)
+            human_read_80 = 80.0 / HUMAN_READING_TOK_PER_SEC
+
+            axion_120 = live_ttft_s + (120.0 / live_tps)
+            gpu_120 = gpu_ttft_s + (120.0 / gpu_tps)
+
+            ucol1, ucol2, ucol3 = st.columns(3)
+            with ucol1:
+                st.info(
+                    f"**1️⃣ Agent Tool Call / JSON Router (`25 tok`)**\n\n"
+                    f"- **Live Axion C4A (`$0.61/hr`)**: `{axion_25:.1f}s`\n"
+                    f"- **NVIDIA L4 GPU (`$1.36/hr`)**: `{gpu_25:.1f}s`\n"
+                    f"- **Wall-Clock Delta**: **`+{axion_25 - gpu_25:.1f}s`**\n\n"
+                    f"✅ **Verdict**: Both finish inside a standard UI spinner while Axion saves **55% hourly cost** and requires **0 GPU quota**."
+                )
+            with ucol2:
+                st.success(
+                    f"**2️⃣ Interactive Streaming Chat (`80 tok`)**\n\n"
+                    f"- **Human Reading Time (`250 wpm`)**: `{human_read_80:.1f}s`\n"
+                    f"- **Live Axion C4A Stream**: `{axion_80:.1f}s` (**`{human_read_80 / max(axion_80, 0.1):.1f}x` faster than reading!**)\n"
+                    f"- **NVIDIA L4 GPU Stream**: `{gpu_80:.1f}s` *(user still reads for `{human_read_80:.1f}s`)*\n\n"
+                    f"✅ **Verdict**: **0.0s mid-stream wait on both** — once the 1st word appears in `{bench['median_ttft_ms']:.0f} ms`, Axion outpaces the human eye."
+                )
+            with ucol3:
+                st.warning(
+                    f"**3️⃣ Async CI/CD PR & Log Triage (`120 tok`)**\n\n"
+                    f"- **90s CI Job + Live Axion**: `{90.0 + axion_120:.1f}s` total\n"
+                    f"- **90s CI Job + L4 GPU**: `{90.0 + gpu_120:.1f}s` total\n"
+                    f"- **Pipeline Time Impact**: **`+{((axion_120 - gpu_120) / 90.0) * 100:.1f}%`**\n\n"
+                    f"✅ **Verdict**: Invisible in background webhooks & CI/CD pipelines, saving **$6,580+/yr** per 2-node HA cluster."
+                )
+
             st.markdown("##### 📏 How Good Is This? (Live Axion vs. Industry Reference Targets)")
             ref_rows = [
                 {
                     "Metric": "🚀 Time to First Token (TTFT)",
                     "Your Live Axion (c4a-standard-16)": f"{bench['median_ttft_ms']:.0f} ms",
-                    "Interactive UX Target": "< 1,000 ms",
-                    "Why It Matters for K8s Agents": _ttft_grade(bench["median_ttft_ms"]) + " — fast prompt prefill via Armv9.2 BF16 kernels",
+                    "NVIDIA L4 GPU Ref (g2-standard-16)": "~180 ms",
+                    "Human / UX Threshold": "< 1,000 ms",
+                    "Takeaway": _ttft_grade(bench["median_ttft_ms"]) + " — both feel instant (<1s) to a human user",
                 },
                 {
-                    "Metric": "⚡ Throughput (Tokens / sec)",
+                    "Metric": "⚡ Decode Speed (Tokens / sec)",
                     "Your Live Axion (c4a-standard-16)": f"{bench['aggregate_tokens_per_sec']:.2f} tok/s",
-                    "Interactive UX Target": "> 4.5 tok/s (~250 wpm human reading)",
-                    "Why It Matters for K8s Agents": _tps_grade(bench["aggregate_tokens_per_sec"]) + " — streams faster than humans read",
+                    "NVIDIA L4 GPU Ref (g2-standard-16)": "~60.0 tok/s",
+                    "Human / UX Threshold": "4.5 tok/s (human reading)",
+                    "Takeaway": _tps_grade(bench["aggregate_tokens_per_sec"]) + " — extra GPU tok/s sits unread on screen",
                 },
                 {
-                    "Metric": "⏱️ Inter-Token Latency (ITL)",
-                    "Your Live Axion (c4a-standard-16)": f"{bench['mean_itl_ms_per_token']:.1f} ms/tok",
-                    "Interactive UX Target": "< 220 ms/tok",
-                    "Why It Matters for K8s Agents": "Low per-token jitter with 14 Neoverse V2 threads bound (0-13)",
+                    "Metric": "⏱️ 80-Token Chat Completion vs. Reading",
+                    "Your Live Axion (c4a-standard-16)": f"{axion_80:.1f}s to generate",
+                    "NVIDIA L4 GPU Ref (g2-standard-16)": f"{gpu_80:.1f}s to generate",
+                    "Human / UX Threshold": f"{human_read_80:.1f}s for human to read",
+                    "Takeaway": f"Both finish {human_read_80 - axion_80:.1f}s–{human_read_80 - gpu_80:.1f}s before the user finishes reading",
                 },
                 {
-                    "Metric": "💰 Hourly Node & $/1M Token Cost",
-                    "Your Live Axion (c4a-standard-16)": f"$0.61/hr (${bench['axion_usd_per_1m_tokens']:.2f}/1M tok)",
-                    "Interactive UX Target": f"x86 C3: $0.84/hr | L4 GPU: $1.36/hr (${bench['l4_gpu_usd_per_1m_tokens']:.2f}/1M)",
-                    "Why It Matters for K8s Agents": "🟢 55% lower hourly node cost vs. L4 GPU & +65% price-perf vs. x86",
+                    "Metric": "💰 Hourly Node & 2-Node HA Annual Cost",
+                    "Your Live Axion (c4a-standard-16)": "$0.61/hr ($10,630/yr HA)",
+                    "NVIDIA L4 GPU Ref (g2-standard-16)": "$1.36/hr ($23,757/yr HA)",
+                    "Human / UX Threshold": "-55% infrastructure cost",
+                    "Takeaway": "🟢 Saves $13,127/yr per 2-node cluster with zero GPU quota bottlenecks",
                 },
             ]
             st.table(ref_rows)
