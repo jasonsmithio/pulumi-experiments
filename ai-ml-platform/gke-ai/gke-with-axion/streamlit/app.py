@@ -391,14 +391,14 @@ with tab_agent:
                                     }
                                     for t in inferred_for_stream
                                 ],
-                                indent=2,
+                                separators=(",", ":"),
                             )
                             stream_user_text = (
-                                f"{active_prompt}\n\n"
-                                f"AUTHORITATIVE LIVE GKE & FINOPS DATA (use these exact numbers, node names, "
-                                f"and dollar costs; do NOT say you lack access to pricing data):\n"
-                                f"```json\n{compact_ctx}\n```\n"
-                                f"Summarize the exact numbers in 4-6 concise bullet points."
+                                f"You are the GKE Axion SRE & FinOps Agent on {MACHINE_TYPE}.\n"
+                                f"USER REQUEST: {active_prompt}\n"
+                                f"LIVE GKE & FINOPS TOOL DATA (cite these exact numbers, node names, and dollar costs):\n"
+                                f"{compact_ctx}\n"
+                                f"Reply in 4 concise markdown bullet points with exact numbers."
                             )
                         else:
                             stream_user_text = active_prompt
@@ -409,7 +409,7 @@ with tab_agent:
                                 client.chat.completions.create(
                                     model=model_choice,
                                     messages=stream_messages,
-                                    max_tokens=220,
+                                    max_tokens=360,
                                     temperature=0.2,
                                     stream=True,
                                     stream_options={"include_usage": True},

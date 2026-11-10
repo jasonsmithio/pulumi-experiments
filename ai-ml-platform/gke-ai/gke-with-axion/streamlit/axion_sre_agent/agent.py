@@ -359,18 +359,16 @@ def execute_agent_turn(
                         if k not in ("kubernetes_manifest_yaml", "kubernetes_statefulset_yaml")
                     }
                 compact_summaries.append({t["name"]: res_copy})
-            context_blob = json.dumps(compact_summaries, indent=2)
+            context_blob = json.dumps(compact_summaries, separators=(",", ":"))
             augmented_user_prompt = (
-                f"{SYSTEM_INSTRUCTION}\n\n"
-                f"USER REQUEST:\n{prompt}\n\n"
-                f"AUTHORITATIVE LIVE GKE & FINOPS DATA (already fetched by your Google ADK tools — "
-                f"use these EXACT numbers, node names, dollar costs, and speeds in your answer; "
-                f"NEVER say you lack access to pricing or cluster data):\n"
-                f"```json\n{context_blob}\n```\n\n"
-                f"Write a concise, authoritative 4-6 bullet engineering answer citing the exact numbers above."
+                f"You are the GKE Axion SRE & FinOps Agent on {MACHINE_TYPE}.\n"
+                f"USER REQUEST: {prompt}\n"
+                f"LIVE GKE & FINOPS TOOL DATA (cite these exact numbers, node names, dollar costs, and speeds):\n"
+                f"{context_blob}\n"
+                f"Reply in 4 concise markdown bullet points with exact numbers."
             )
         else:
-            augmented_user_prompt = f"{SYSTEM_INSTRUCTION}\n\nUSER REQUEST:\n{prompt}"
+            augmented_user_prompt = f"You are the GKE Axion SRE & FinOps Agent on {MACHINE_TYPE}.\nUSER REQUEST: {prompt}"
 
         messages.append({"role": "user", "content": augmented_user_prompt})
 
@@ -384,7 +382,7 @@ def execute_agent_turn(
         stream_resp = client.chat.completions.create(
             model=model_name,
             messages=messages,
-            max_tokens=220,
+            max_tokens=360,
             temperature=0.2,
             stream=True,
             stream_options={"include_usage": True},
