@@ -48,6 +48,8 @@ spec:
             - "--port=8000"
             - "--max-model-len=8192"
             - "--max-num-seqs=8"
+            - "--enforce-eager"
+            - "--language-model-only"
             - "--enable-auto-tool-choice"
             - "--tool-call-parser=pythonic"
           ports:
@@ -63,7 +65,7 @@ spec:
             - name: VLLM_CPU_OMP_THREADS_BIND
               value: "0-13"
             - name: VLLM_CPU_KVCACHE_SPACE
-              value: "16"
+              value: "8"
             - name: HF_HOME
               value: "/root/.cache/huggingface"
             - name: HF_TOKEN
@@ -92,7 +94,7 @@ spec:
               memory: "24Gi"
             limits:
               cpu: "15"
-              memory: "40Gi"
+              memory: "52Gi"
       volumes:
         - name: dshm
           emptyDir:

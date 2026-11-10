@@ -36,7 +36,7 @@ spec:
             memory: "24Gi"
           limits:
             cpu: "15"
-            memory: "40Gi"
+            memory: "52Gi"
         command: ["python3", "-m", "vllm.entrypoints.openai.api_server"]
         args:
         - --model=$(MODEL_ID)
@@ -45,6 +45,8 @@ spec:
         - --port=8000
         - --max-model-len=8192
         - --max-num-seqs=8
+        - --enforce-eager
+        - --language-model-only
         - --enable-auto-tool-choice
         - --tool-call-parser=pythonic
         env:
@@ -57,7 +59,7 @@ spec:
         - name: VLLM_CPU_OMP_THREADS_BIND
           value: "0-13"
         - name: VLLM_CPU_KVCACHE_SPACE
-          value: "16"
+          value: "8"
         - name: HF_TOKEN
           valueFrom:
             secretKeyRef:
