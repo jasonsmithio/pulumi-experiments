@@ -141,10 +141,15 @@ kubeconfig = kubernetes.Provider(
 )
 
 # 4. Provision the Hyperdisk Balanced Arm StorageClass, optional HF Secret & vLLM + Gemma 4 StatefulSet
+def _force_delete_before_replace(obj, opts: pulumi.ResourceOptions):
+    opts.delete_before_replace = True
+
+
 sc_yaml = ConfigFile(
     "hyperdisk-arm-sc-yaml",
     file="k8s/hyperdisk-arm-sc.yaml",
-    opts=pulumi.ResourceOptions(provider=kubeconfig, depends_on=[gke_nodepool]),
+    transformations=[_force_delete_before_replace],
+    opts=pulumi.ResourceOptions(provider=kubeconfig, depends_on=[gke_nodepool], delete_before_replace=True),
 )
 
 vllm_deps = [sc_yaml]
@@ -165,7 +170,8 @@ if hf_token is not None:
 vllm_yaml = ConfigFile(
     "vllm-axion-gemma4-yaml",
     file="k8s/vllm-axion-gemma4.yaml",
-    opts=pulumi.ResourceOptions(provider=kubeconfig, depends_on=vllm_deps),
+    transformations=[_force_delete_before_replace],
+    opts=pulumi.ResourceOptions(provider=kubeconfig, depends_on=vllm_deps, delete_before_replace=True),
 )
 
 # 5. Artifact Registry Repository & Multi-Arch (linux/amd64, linux/arm64) Streamlit Image
